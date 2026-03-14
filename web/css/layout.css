@@ -51,7 +51,7 @@ nav a.active {
 }
 
 .user-menu {
-    @apply flex items-center;
+    @apply items-center;
 }
 
 .user-menu span {
