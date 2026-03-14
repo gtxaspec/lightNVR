@@ -394,7 +394,9 @@ export function Header({ version = VERSION }) {
             <div className="xl:hidden mt-2 border-t pt-2 container mx-auto px-4" style={{borderColor: 'hsl(var(--border))'}}>
               <ul className="list-none m-0 p-0 flex flex-col w-full">
                 <li className="w-full">{renderLanguageSelector(true)}</li>
-                {navItems.map((navItem) => renderNavItem(navItem, true))}
+                <div className="lg:hidden">
+                  {navItems.map((navItem) => renderNavItem(navItem, true))}
+                </div>
                 {authEnabled && (
                   <li className="w-full mt-2 pt-2 border-t" style={{borderColor: 'hsl(var(--border))'}}>
                     <div className="flex justify-between items-center px-4 py-2">
