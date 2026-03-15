@@ -5,6 +5,7 @@
 
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { useI18n } from '../../i18n.js';
+import LanguageSelector from './common/LanguageSelector.jsx';
 
 /**
  * Returns a safe same-origin redirect path from a candidate URL string.
@@ -414,6 +415,10 @@ export function LoginView() {
             <p className="mt-2">{t('login.changePasswordHint')}</p>
           </div>
         )}
+
+        <div class="text-center mt-4 list-none">
+          <LanguageSelector/>
+        </div>
       </div>
     </section>
   );

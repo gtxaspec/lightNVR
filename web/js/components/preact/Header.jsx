@@ -11,7 +11,8 @@ import { showStatusMessage } from './ToastContainer.jsx';
 import { EditUserModal } from './users/EditUserModal.jsx';
 import { getAuthHeaders, isDemoMode, validateSession } from '../../utils/auth-utils.js';
 import { forceNavigation } from '../../utils/navigation-utils.js';
-import { getLocalesUrl, useI18n } from '../../i18n.js';
+import { useI18n } from '../../i18n.js';
+import LanguageSelector from './common/LanguageSelector.jsx';
 
 const buildProfileFormData = (user = {}) => ({
   username: user.username || '',
@@ -43,7 +44,7 @@ export function Header({ version = VERSION }) {
   const [authEnabled, setAuthEnabled] = useState(true); // Default to true while loading
   const [demoMode, setDemoMode] = useState(false); // Demo mode state
   const [userRole, _setUserRole] = useState(localStorage.getItem('userrole') || null); // null = still loading
-  const { t, locale, setLocalePreference, availableLocales } = useI18n();
+  const { t } = useI18n();
 
   const setUsername = (username) => {
     _setUsername(username);
@@ -310,55 +311,6 @@ export function Header({ version = VERSION }) {
     }, mobile);
   };
 
-  const renderLanguageSelector = (mobile = false) => {
-    const images = Object.fromEntries(availableLocales.map((item) => {
-      return [item.code, (menu = false) => {
-        return <>
-          <img width="40" height="22" class="p-0 ml-3" src={getLocalesUrl(item.code + '.png')} alt={`${item.code.toUpperCase()} (${item.nativeName})`}/>
-          <span
-            style={menu ? {whiteSpace: 'nowrap'} : {}}
-            class={menu ? 'ml-1' : 'ml-3 mr-3'}
-          >{item.code.toUpperCase() + (menu ? ` (${item.nativeName})` : '')}</span>
-        </>;
-      }];
-    }));
-
-    const baseClasses = "no-underline rounded transition-colors";
-    const activeClass = 'text-[hsl(var(--card-foreground))] hover:bg-[hsl(var(--primary)/0.8)] hover:text-[hsl(var(--primary-foreground))]';
-
-    const DesktopWrapper = mobile ? ({children}) => <>{children}</> : ({children}) => <li class="mx-1">{children}</li>
-
-    return (
-      <DesktopWrapper>
-        <div
-          class={`dropdown ${baseClasses} ${activeClass} ${mobile ? ' w-full ' : ''}`}
-        >
-          <div tabindex="0" class={`flex cursor-pointer border-0 font-medium items-center ${mobile ? 'w-full px-4 py-3' : 'py-1.5'}`}>
-            {images[locale]()}
-          </div>
-          <ul
-            tabindex="-1"
-            class="rounded transition-colors dropdown-content menu bg-[hsl(var(--card))]"
-            style="width: max-content; border: 1px solid hsl(var(--primary)/0.8);"
-          >
-            {Object.keys(images).map((code) => (
-              <li
-                style="flex-flow: row nowrap;"
-                class={`flex cursor-pointer border-0 font-medium items-center cursor-pointer ${baseClasses} py-1 ${activeClass}`}
-                onClick={(e) => {
-                  setLocalePreference(code);
-                  document.activeElement.blur();
-                }}
-              >
-                {images[code](true)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </DesktopWrapper>
-    );
-  };
-
   return (
       <>
       <header className="app-header py-2 shadow-md mb-4 w-full" style={{ position: 'relative', zIndex: 20, backgroundColor: 'hsl(var(--card))', color: 'hsl(var(--card-foreground))' }}>
@@ -378,7 +330,7 @@ export function Header({ version = VERSION }) {
           {/* User Menu (Desktop) */}
           <nav className="hidden xl:block" style={{ position: 'relative', zIndex: 20 }}>
             <ul className="flex list-none m-0 p-0 user-menu items-center">
-              {renderLanguageSelector()}
+              <LanguageSelector/>
               {demoMode && !localStorage.getItem('auth') && (
                 <span className="mr-2 px-2 py-0.5 text-xs rounded" style={{backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))'}}>{t('auth.demoMode')}</span>
               )}
@@ -411,7 +363,7 @@ export function Header({ version = VERSION }) {
                 </div>
                 <li className="w-full mt-2 pt-2 border-t" style={{borderColor: 'hsl(var(--border))'}}>
                   <div className="flex justify-between items-center px-4 py-2">
-                    <li class="w-full">{renderLanguageSelector(true)}</li>
+                    <li class="w-full"><LanguageSelector mobile={true}/></li>
                     {authEnabled && (
                       <>
                         {demoMode && !localStorage.getItem('auth') && (
