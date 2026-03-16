@@ -325,7 +325,7 @@ export function RecordingsTable({
                 </td>
               </tr>
             ) : recordings.map(recording => (
-              <tr key={recording.id} className="hover:bg-muted/50">
+              <tr key={recording.id} className={"hover:bg-muted/50" + (!!selectedRecordings[recording.id] ? " table-row-selected-recording" : "")}>
                 {canDelete && (
                   <td className="px-4 py-4 whitespace-nowrap">
                     <input

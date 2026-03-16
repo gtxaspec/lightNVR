@@ -49,6 +49,11 @@
     @apply ml-2 cursor-pointer font-bold text-base leading-none;
 }
 
+/* Shade the table row of the selected recordings */
+.table-row-selected-recording td {
+    @apply bg-muted;
+}
+
 /* Ensure tables don't get too compressed on small screens but stay within container */
 @media (max-width: 576px) {
     #recordings-table {
