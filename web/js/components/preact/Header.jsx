@@ -260,7 +260,7 @@ export function Header({ version = VERSION }) {
 
     const isDisabled = item.disabled === true;
     return (
-        <li className={mobile ? "w-full" : item.classNameLi ? item.classNameLi : "mx-1"}>
+        <li className={mobile ? "" : item.classNameLi ? item.classNameLi : "mx-1"}>
           <a
               href={isDisabled ? undefined : item.href}
               id={item.id}
@@ -362,19 +362,19 @@ export function Header({ version = VERSION }) {
             <div className="xl:hidden mt-2 border-t pt-2 container mx-auto px-4" style={{borderColor: 'hsl(var(--border))'}}>
               <ul className="list-none m-0 p-0 flex flex-col w-full">
                 {/* Main nav links — only shown on screens too narrow for Desktop Navigation */}
-                <li className="lg:hidden w-full">
+                <li className="lg:hidden border-b pb-2 w-full" style={{borderColor: 'hsl(var(--border))'}}>
                   <ul className="list-none m-0 p-0 flex flex-col w-full">
                     {navItems.map((navItem) => renderNavItem(navItem, true))}
                   </ul>
                 </li>
                 {/* User / language section — always shown in mobile menu */}
-                <li className="w-full mt-2 pt-2 border-t" style={{borderColor: 'hsl(var(--border))'}}>
+                <li className="w-full">
                   <ul className="list-none m-0 p-0 flex flex-row flex-wrap items-center justify-between px-4 py-2 w-full">
-                    <li className="w-full"><LanguageSelector mobile={true}/></li>
+                    <li><LanguageSelector mobile={true}/></li>
                     {authEnabled && (
                       <>
                         {demoMode && !localStorage.getItem('auth') && (
-                          <li className="w-full">
+                          <li>
                             <span className="mr-2 px-2 py-0.5 text-xs rounded" style={{backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))'}}>{t('auth.demoShort')}</span>
                           </li>
                         )}
