@@ -158,84 +158,88 @@ export function RecordingsTable({
   return (
     <div className="recordings-container bg-card text-card-foreground rounded-lg shadow overflow-hidden w-full">
       {/* Toolbar: batch actions + column config */}
-      <div className="px-3 py-2.5 border-b border-border flex flex-wrap gap-2 items-center">
-        {collapsed && (
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            className="p-1.5 rounded hover:bg-muted/70 transition-colors"
-            title={t('recordings.showFilters')}
-          >
-            <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-            </svg>
-          </button>
-        )}
-        {canDelete && (
-          <>
-            <div className="flex items-center gap-2 mr-2">
-              <div className="selected-count text-sm text-muted-foreground">
-                {selectedCount > 0 ?
-                  t('recordings.recordingsSelectedCount', { count: selectedCount }) :
-                  t('recordings.noRecordingsSelected')}
+      <div className="px-3 py-2.5 border-b border-border flex items-center gap-2">
+        {/* Left: all action items — wraps on narrow screens without affecting the gear icon */}
+        <div className="flex flex-wrap gap-2 items-center flex-1 min-w-0">
+          {collapsed && (
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="p-1.5 rounded hover:bg-muted/70 transition-colors"
+              title={t('recordings.showFilters')}
+            >
+              <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </button>
+          )}
+          {canDelete && (
+            <>
+              <div className="flex items-center gap-2 mr-2">
+                <div className="selected-count text-sm text-muted-foreground">
+                  {selectedCount > 0 ?
+                    t('recordings.recordingsSelectedCount', { count: selectedCount }) :
+                    t('recordings.noRecordingsSelected')}
+                </div>
+                {selectedCount > 0 && clearSelections && (
+                  <button
+                    className="btn-secondary text-xs px-2 py-1"
+                    onClick={clearSelections}
+                    title={t('recordings.clearSelectedTitle')}>
+                    {t('recordings.clearSelected')}
+                  </button>
+                )}
               </div>
-              {selectedCount > 0 && clearSelections && (
+              <button
+                className="btn-danger text-xs px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={selectedCount === 0}
+                onClick={() => openDeleteModal('selected')}>
+                {t('recordings.deleteSelected')}
+              </button>
+              <button
+                className="btn-danger text-xs px-2 py-1"
+                onClick={() => openDeleteModal('all')}>
+                {t('recordings.deleteAllFiltered')}
+              </button>
+              <button
+                className="btn-primary text-xs px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={selectedCount === 0}
+                onClick={() => openDownloadModal && openDownloadModal()}
+                title={t('recordings.downloadSelectedTitle')}>
+                {t('recordings.downloadSelected')}
+              </button>
+              <div className="relative inline-block">
                 <button
-                  className="btn-secondary text-xs px-2 py-1"
-                  onClick={clearSelections}
-                  title={t('recordings.clearSelectedTitle')}>
-                  {t('recordings.clearSelected')}
+                  className="btn-secondary text-xs px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  disabled={selectedCount === 0}
+                  onClick={() => setShowBulkTags(!showBulkTags)}
+                  title={t('recordings.manageTagsTitle')}>
+                  <TagIcon className="w-3.5 h-3.5" /> {t('recordings.manageTagsButton')}
+                </button>
+                {showBulkTags && (
+                  <BulkTagsOverlay
+                    recordings={recordings}
+                    selectedRecordings={selectedRecordings}
+                    onClose={() => setShowBulkTags(false)}
+                    onTagsChanged={onTagsChanged}
+                  />
+                )}
+              </div>
+              {viewSelectedInTimeline && (
+                <button
+                  className="btn-secondary text-xs px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={selectedCount === 0}
+                  onClick={viewSelectedInTimeline}
+                  title={t('live.viewInTimeline')}>
+                  ▶ {t('live.viewInTimeline')}
                 </button>
               )}
-            </div>
-            <button
-              className="btn-danger text-xs px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={selectedCount === 0}
-              onClick={() => openDeleteModal('selected')}>
-              {t('recordings.deleteSelected')}
-            </button>
-            <button
-              className="btn-danger text-xs px-2 py-1"
-              onClick={() => openDeleteModal('all')}>
-              {t('recordings.deleteAllFiltered')}
-            </button>
-            <button
-              className="btn-primary text-xs px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={selectedCount === 0}
-              onClick={() => openDownloadModal && openDownloadModal()}
-              title={t('recordings.downloadSelectedTitle')}>
-              {t('recordings.downloadSelected')}
-            </button>
-            <div className="relative inline-block">
-              <button
-                className="btn-secondary text-xs px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                disabled={selectedCount === 0}
-                onClick={() => setShowBulkTags(!showBulkTags)}
-                title={t('recordings.manageTagsTitle')}>
-                <TagIcon className="w-3.5 h-3.5" /> {t('recordings.manageTagsButton')}
-              </button>
-              {showBulkTags && (
-                <BulkTagsOverlay
-                  recordings={recordings}
-                  selectedRecordings={selectedRecordings}
-                  onClose={() => setShowBulkTags(false)}
-                  onTagsChanged={onTagsChanged}
-                />
-              )}
-            </div>
-            {viewSelectedInTimeline && (
-              <button
-                className="btn-secondary text-xs px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={selectedCount === 0}
-                onClick={viewSelectedInTimeline}
-                title={t('live.viewInTimeline')}>
-                ▶ {t('live.viewInTimeline')}
-              </button>
-            )}
-          </>
-        )}
-        <div className="ml-auto">
+            </>
+          )}
+        </div>
+        {/* Right: column config gear — always pinned to the right, never wraps */}
+        <div className="flex-shrink-0">
           <ColumnConfigDropdown hiddenColumns={hiddenColumns} toggleColumn={toggleColumn} />
         </div>
       </div>
