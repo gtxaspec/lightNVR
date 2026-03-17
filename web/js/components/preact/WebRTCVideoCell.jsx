@@ -655,6 +655,14 @@ export function WebRTCVideoCell({
               return sendOfferWithRetry(attempt + 1);
             }
             console.error(`go2rtc /api/webrtc error for stream ${stream.name}: status=${response.status}, body="${bodyText}"`);
+            // Check whether the go2rtc error body indicates the camera source is
+            // unreachable (e.g. "dial tcp <ip>:554: connect: no route to host").
+            // These patterns come from go2rtc's streams/add_consumer pipeline and
+            // are much more actionable than a generic "500 Internal Server Error".
+            const isSourceUnreachable = /dial tcp|no route to host|connection refused|connect:/i.test(bodyText);
+            if (isSourceUnreachable) {
+              throw new Error(t('live.cannotConnectToSource'));
+            }
             throw new Error(`Failed to send offer: ${response.status} ${response.statusText}`);
           }
           return bodyText;

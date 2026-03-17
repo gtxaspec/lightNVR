@@ -286,5 +286,6 @@
   "fields.password": "Passwort",
   "fields.email": "E-Mail",
   "fields.role": "Rolle",
-  "footer.github": "GitHub"
+  "footer.github": "GitHub",
+  "live.cannotConnectToSource": "Keine Verbindung zur Kameraquelle möglich"
 }

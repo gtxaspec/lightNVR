@@ -286,5 +286,6 @@
   "fields.password": "パスワード",
   "fields.email": "メールアドレス",
   "fields.role": "役割",
-  "footer.github": "GitHub"
+  "footer.github": "GitHub",
+  "live.cannotConnectToSource": "カメラソースに接続できません"
 }

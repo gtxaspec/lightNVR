@@ -286,5 +286,6 @@
   "fields.password": "Password",
   "fields.email": "Email",
   "fields.role": "Ruolo",
-  "footer.github": "GitHub"
+  "footer.github": "GitHub",
+  "live.cannotConnectToSource": "Impossibile connettersi alla sorgente telecamera"
 }

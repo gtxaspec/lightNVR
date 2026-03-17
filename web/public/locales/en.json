@@ -566,6 +566,7 @@
   "live.webrtcConnectionLostPleaseRetry": "WebRTC connection lost. Please retry.",
   "live.connectionTimeoutCheckNetwork": "Connection timeout. Check network/firewall settings.",
   "live.failedToEstablishWebrtcConnection": "Failed to establish WebRTC connection",
+  "live.cannotConnectToSource": "Cannot connect to camera source",
   "live.microphoneAccessDenied": "Microphone access denied. Please allow microphone access in your browser settings.",
   "live.noMicrophoneFound": "No microphone found. Please connect a microphone.",
   "live.microphoneErrorWithMessage": "Microphone error: {message}",

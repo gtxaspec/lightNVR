@@ -326,6 +326,7 @@
   "live.webrtcConnectionLostPleaseRetry": "Se perdió la conexión WebRTC. Vuelve a intentarlo.",
   "live.connectionTimeoutCheckNetwork": "Tiempo de conexión agotado. Comprueba la configuración de red/firewall.",
   "live.failedToEstablishWebrtcConnection": "No se pudo establecer la conexión WebRTC",
+  "live.cannotConnectToSource": "No se puede conectar a la fuente de cámara",
   "live.microphoneAccessDenied": "Acceso al micrófono denegado. Permite el acceso al micrófono en la configuración de tu navegador.",
   "live.noMicrophoneFound": "No se encontró ningún micrófono. Conecta un micrófono.",
   "live.microphoneErrorWithMessage": "Error de micrófono: {message}",

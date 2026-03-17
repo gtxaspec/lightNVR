@@ -286,5 +286,6 @@
   "fields.password": "密码",
   "fields.email": "电子邮箱",
   "fields.role": "角色",
-  "footer.github": "GitHub"
+  "footer.github": "GitHub",
+  "live.cannotConnectToSource": "无法连接到摄像头源"
 }
