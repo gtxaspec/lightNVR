@@ -895,12 +895,7 @@ int main(int argc, char *argv[]) {
                 log_warn("Failed to connect to MQTT broker, will retry automatically");
             } else {
                 log_info("Connected to MQTT broker");
-
-                // Publish Home Assistant discovery and start HA services if enabled
-                if (config.mqtt_ha_discovery) {
-                    mqtt_publish_ha_discovery();
-                    mqtt_start_ha_services();
-                }
+                // on_connect callback will publish HA discovery and start services if enabled
             }
         }
     }
