@@ -317,11 +317,13 @@ cleanup:
     return result;
 }
 
-int url_build_onvif_device_service_url(const char *url, int onvif_port,
-                                       char *out_url, size_t out_size) {
+int url_build_onvif_service_url(const char *url, int onvif_port,
+                                const char *service_path,
+                                char *out_url, size_t out_size) {
     char *base_url = NULL;
     CURLU *handle = NULL;
     char *scheme = NULL;
+    char *port_str = NULL;
     char port_buffer[16];
     int result = -1;
 
@@ -329,44 +331,116 @@ int url_build_onvif_device_service_url(const char *url, int onvif_port,
         return -1;
     }
 
-    if (onvif_port <= 0) {
-        return url_strip_credentials(url, out_url, out_size);
-    }
-
     handle = parse_url_handle(url, &base_url, NULL);
     if (!handle) {
         return -1;
     }
 
-    if (curl_url_get(handle, CURLUPART_SCHEME, &scheme, 0) != CURLUE_OK ||
-        !scheme || (strcasecmp(scheme, "http") != 0 && strcasecmp(scheme, "https") != 0)) {
-        if (curl_url_set(handle, CURLUPART_SCHEME, "http", 0) != CURLUE_OK) {
+    /* Map transport scheme to HTTP/HTTPS equivalent:
+     *   rtsps  -> https   (RTSP over TLS -> HTTPS)
+     *   https  -> https   (preserve)
+     *   http   -> http    (preserve)
+     *   rtsp / onvif / anything else -> http
+     */
+    if (curl_url_get(handle, CURLUPART_SCHEME, &scheme, 0) != CURLUE_OK || !scheme) {
+        goto cleanup;
+    }
+    {
+        const char *target_scheme =
+            (strcasecmp(scheme, "rtsps") == 0 || strcasecmp(scheme, "https") == 0)
+            ? "https" : "http";
+        if (curl_url_set(handle, CURLUPART_SCHEME, target_scheme, 0) != CURLUE_OK) {
             goto cleanup;
         }
     }
 
+    /* Determine port:
+     *   onvif_port > 0  -> use it explicitly
+     *   onvif_port <= 0 -> map standard transport ports (554->80, 322->443);
+     *                      all other explicit ports are kept as-is;
+     *                      if no port is present use the scheme default.
+     */
+    if (onvif_port > 0) {
+        snprintf(port_buffer, sizeof(port_buffer), "%d", onvif_port);
+        if (curl_url_set(handle, CURLUPART_PORT, port_buffer, 0) != CURLUE_OK) {
+            goto cleanup;
+        }
+    } else {
+        if (curl_url_get(handle, CURLUPART_PORT, &port_str, 0) == CURLUE_OK && port_str) {
+            long p = strtol(port_str, NULL, 10);
+            if (p == 554) {
+                if (curl_url_set(handle, CURLUPART_PORT, "80", 0) != CURLUE_OK) {
+                    goto cleanup;
+                }
+            } else if (p == 322) {
+                if (curl_url_set(handle, CURLUPART_PORT, "443", 0) != CURLUE_OK) {
+                    goto cleanup;
+                }
+            }
+            /* Other explicit ports: leave unchanged. */
+        }
+        /* No explicit port: leave unset so the scheme default applies. */
+    }
+
+    /* Strip credentials, query, and fragment. */
     if (curl_url_set(handle, CURLUPART_USER, NULL, 0) != CURLUE_OK ||
         curl_url_set(handle, CURLUPART_PASSWORD, NULL, 0) != CURLUE_OK) {
         goto cleanup;
     }
 
-    snprintf(port_buffer, sizeof(port_buffer), "%d", onvif_port);
-    if (curl_url_set(handle, CURLUPART_PORT, port_buffer, 0) != CURLUE_OK ||
-        curl_url_set(handle, CURLUPART_PATH, "/onvif/device_service", 0) != CURLUE_OK ||
-        curl_url_set(handle, CURLUPART_QUERY, NULL, 0) != CURLUE_OK ||
+    /* Set service path; use "/" as a placeholder when none was requested
+     * (the trailing slash is stripped below). */
+    {
+        const char *path =
+            (service_path && service_path[0] == '/') ? service_path : "/";
+        if (curl_url_set(handle, CURLUPART_PATH, path, 0) != CURLUE_OK) {
+            goto cleanup;
+        }
+    }
+
+    if (curl_url_set(handle, CURLUPART_QUERY, NULL, 0) != CURLUE_OK ||
         curl_url_set(handle, CURLUPART_FRAGMENT, NULL, 0) != CURLUE_OK) {
         goto cleanup;
     }
 
     result = rebuild_url(handle, NULL, out_url, out_size);
 
+    /* When no service path was requested, strip any trailing '/' to return a
+     * bare base URL (scheme://host[:port]) without a path component. */
+    if (result == 0 && (!service_path || service_path[0] != '/')) {
+        size_t len = strlen(out_url);
+        while (len > 0 && out_url[len - 1] == '/') {
+            out_url[--len] = '\0';
+        }
+    }
+
 cleanup:
     if (scheme) {
         curl_free(scheme);
     }
+    if (port_str) {
+        curl_free(port_str);
+    }
     curl_url_cleanup(handle);
     free(base_url);
     return result;
+}
+
+int url_build_onvif_device_service_url(const char *url, int onvif_port,
+                                       char *out_url, size_t out_size) {
+    if (!url || !out_url || out_size == 0) {
+        return -1;
+    }
+
+    /* Backward-compatible: when no port override is supplied, assume the
+     * caller is passing a URL that already contains the correct ONVIF endpoint
+     * and simply strip any embedded credentials. */
+    if (onvif_port <= 0) {
+        return url_strip_credentials(url, out_url, out_size);
+    }
+
+    return url_build_onvif_service_url(url, onvif_port, "/onvif/device_service",
+                                       out_url, out_size);
 }
 
 int url_redact_for_logging(const char *url, char *out_url, size_t out_size) {

@@ -1,5 +1,6 @@
 #include "video/onvif_ptz.h"
 #include "core/logger.h"
+#include "core/url_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -176,27 +177,16 @@ static char* send_ptz_soap_request(const char *ptz_url, const char *soap_action,
 
 int onvif_ptz_get_service_url(const char *device_url, const char *username,
                               const char *password, char *ptz_url, size_t url_size) {
-    // For now, derive PTZ URL from device URL by replacing /onvif/device_service with /onvif/ptz_service
-    // This is a common pattern but may need adjustment for specific cameras
-    if (!device_url || !ptz_url || url_size == 0) {
-        return -1;
-    }
-
-    // Try to find the base URL and append PTZ service path
-    const char *service_path = strstr(device_url, "/onvif/");
-    if (service_path) {
-        size_t base_len = service_path - device_url;
-        if (base_len + 20 < url_size) {
-            strncpy(ptz_url, device_url, base_len);
-            ptz_url[base_len] = '\0';
-            snprintf(ptz_url + base_len, url_size - base_len, "/onvif/ptz_service");
-            return 0;
-        }
-    }
-
-    // Fallback: just append /onvif/ptz_service to the base URL
-    snprintf(ptz_url, url_size, "%s/onvif/ptz_service", device_url);
-    return 0;
+    /* device_url is already an http/https ONVIF URL (e.g. from
+     * url_build_onvif_device_service_url).  Passing onvif_port=0 preserves
+     * the existing port; the scheme is already http/https so it is kept as-is.
+     * username/password are accepted for API compatibility but unused here —
+     * callers that need credential-aware service discovery should query the
+     * device directly. */
+    (void)username;
+    (void)password;
+    return url_build_onvif_service_url(device_url, 0, "/onvif/ptz_service",
+                                       ptz_url, url_size);
 }
 
 int onvif_ptz_continuous_move(const char *ptz_url, const char *profile_token,

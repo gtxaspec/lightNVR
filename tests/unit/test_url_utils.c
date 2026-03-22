@@ -50,6 +50,51 @@ void test_url_build_onvif_device_service_url_preserves_https_scheme(void) {
     TEST_ASSERT_EQUAL_STRING("https://camera:7443/onvif/device_service", url);
 }
 
+/* ---- url_build_onvif_service_url ---- */
+
+void test_url_build_onvif_service_url_rtsp_to_http_with_device_service(void) {
+    char url[256];
+    TEST_ASSERT_EQUAL_INT(0, url_build_onvif_service_url("rtsp://alice:secret@camera:554/live", 8080, "/onvif/device_service", url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("http://camera:8080/onvif/device_service", url);
+}
+
+void test_url_build_onvif_service_url_rtsps_maps_to_https(void) {
+    char url[256];
+    TEST_ASSERT_EQUAL_INT(0, url_build_onvif_service_url("rtsps://camera:322/live", 0, "/onvif/ptz_service", url, sizeof(url)));
+    /* rtsps + port 322 -> https + port 443 */
+    TEST_ASSERT_EQUAL_STRING("https://camera:443/onvif/ptz_service", url);
+}
+
+void test_url_build_onvif_service_url_rtsp_port_554_maps_to_80(void) {
+    char url[256];
+    TEST_ASSERT_EQUAL_INT(0, url_build_onvif_service_url("rtsp://camera:554/live", 0, "/onvif/device_service", url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("http://camera:80/onvif/device_service", url);
+}
+
+void test_url_build_onvif_service_url_explicit_onvif_port_overrides_mapping(void) {
+    char url[256];
+    TEST_ASSERT_EQUAL_INT(0, url_build_onvif_service_url("rtsp://user:pass@camera:554/stream", 8899, "/onvif/ptz_service", url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("http://camera:8899/onvif/ptz_service", url);
+}
+
+void test_url_build_onvif_service_url_strips_credentials(void) {
+    char url[256];
+    TEST_ASSERT_EQUAL_INT(0, url_build_onvif_service_url("rtsp://admin:secret@192.168.1.1:8554/ch0", 80, "/onvif/device_service", url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("http://192.168.1.1:80/onvif/device_service", url);
+}
+
+void test_url_build_onvif_service_url_null_path_returns_base_url(void) {
+    char url[256];
+    TEST_ASSERT_EQUAL_INT(0, url_build_onvif_service_url("rtsp://user:pass@camera:8080/stream", 8080, NULL, url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("http://camera:8080", url);
+}
+
+void test_url_build_onvif_service_url_https_source_preserved(void) {
+    char url[256];
+    TEST_ASSERT_EQUAL_INT(0, url_build_onvif_service_url("https://camera:443/onvif/device_service", 0, "/onvif/ptz_service", url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("https://camera:443/onvif/ptz_service", url);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_url_apply_credentials_injects_credentials);
@@ -59,5 +104,12 @@ int main(void) {
     RUN_TEST(test_url_extract_credentials_decodes_values);
     RUN_TEST(test_url_build_onvif_device_service_url_overrides_port_and_strips_credentials);
     RUN_TEST(test_url_build_onvif_device_service_url_preserves_https_scheme);
+    RUN_TEST(test_url_build_onvif_service_url_rtsp_to_http_with_device_service);
+    RUN_TEST(test_url_build_onvif_service_url_rtsps_maps_to_https);
+    RUN_TEST(test_url_build_onvif_service_url_rtsp_port_554_maps_to_80);
+    RUN_TEST(test_url_build_onvif_service_url_explicit_onvif_port_overrides_mapping);
+    RUN_TEST(test_url_build_onvif_service_url_strips_credentials);
+    RUN_TEST(test_url_build_onvif_service_url_null_path_returns_base_url);
+    RUN_TEST(test_url_build_onvif_service_url_https_source_preserved);
     return UNITY_END();
 }

@@ -194,54 +194,25 @@ static bool is_onvif_detection_model(const char *model_path) {
 }
 
 /**
- * Derive an ONVIF base URL (http://host[:port]) from a stream URL.
- * Strips the scheme, credentials, port, and path, then prepends "http://".
- * If onvif_port > 0, appends the explicit ONVIF port.
+ * Derive an ONVIF base URL (http[s]://host[:port]) from a stream URL.
+ *
+ * Delegates to url_build_onvif_service_url() with no service path to obtain
+ * just the scheme + host + port, stripping credentials, query, and fragment.
+ * Scheme mapping (rtsp→http, rtsps→https) and standard port mapping
+ * (554→80, 322→443) are applied by the common helper.
+ *
  * Examples:
- *   rtsp://admin:pass@192.168.1.100:554/stream  (port=0)   →  http://192.168.1.100
+ *   rtsp://admin:pass@192.168.1.100:554/stream  (port=0)    →  http://192.168.1.100:80
  *   rtsp://admin:pass@192.168.1.100:554/stream  (port=8080) →  http://192.168.1.100:8080
- *   onvif://192.168.1.100/onvif/device_service  (port=0)   →  http://192.168.1.100
+ *   rtsps://192.168.1.100/stream                (port=0)    →  https://192.168.1.100
+ *   onvif://192.168.1.100/onvif/device_service  (port=0)    →  http://192.168.1.100
  */
 static void extract_onvif_base_url(const char *stream_url, int onvif_port, char *onvif_url, size_t onvif_url_size) {
-    if (!stream_url) {
+    if (!stream_url || !onvif_url || onvif_url_size == 0) {
         return;
     }
-    /* If no output buffer is provided or buffer size is zero, nothing to do. */
-    if (!onvif_url || onvif_url_size == 0) {
-        return;
-    }
-    /* Ensure the output buffer is always at least null-terminated. */
     onvif_url[0] = '\0';
-
-    /* Skip scheme (rtsp://, onvif://, http://, etc.) */
-    const char *host_start = strstr(stream_url, "://");
-    if (!host_start) {
-        if (onvif_port > 0) {
-            snprintf(onvif_url, onvif_url_size, "http://%s:%d", stream_url, onvif_port);
-        } else {
-            snprintf(onvif_url, onvif_url_size, "http://%s", stream_url);
-        }
-        return;
-    }
-    host_start += 3;  /* skip "://" */
-
-    /* Skip optional credentials (user:pass@) */
-    const char *at_sign = strchr(host_start, '@');
-    if (at_sign) {
-        host_start = at_sign + 1;
-    }
-
-    /* Find end of bare hostname: stop at ':', '/', or NUL */
-    const char *host_end = host_start;
-    while (*host_end && *host_end != ':' && *host_end != '/') {
-        host_end++;
-    }
-
-    if (onvif_port > 0) {
-        snprintf(onvif_url, onvif_url_size, "http://%.*s:%d", (int)(host_end - host_start), host_start, onvif_port);
-    } else {
-        snprintf(onvif_url, onvif_url_size, "http://%.*s", (int)(host_end - host_start), host_start);
-    }
+    url_build_onvif_service_url(stream_url, onvif_port, NULL, onvif_url, onvif_url_size);
 }
 
 /**
