@@ -373,7 +373,7 @@ static onvif_subscription_t *get_subscription(const char *url, const char *usern
         "  <InitialTerminationTime>PT1H</InitialTerminationTime>\n"
         "</CreatePullPointSubscription>";
 
-    char *response = send_onvif_request(url, username, password, request_body, "events_service");
+    char *response = send_onvif_request(url, username, password, request_body, "service");
     if (!response) {
         log_error("Failed to create subscription");
         pthread_mutex_unlock(&subscription_mutex);
@@ -454,10 +454,21 @@ static char *extract_service_name(const char *subscription_address) {
 static bool has_motion_event(const char *response) {
     if (!response) return false;
 
-    // Check for different motion event patterns
+    // Check for different motion event patterns.
+    // Standard ONVIF topics:
     if (strstr(response, "RuleEngine/MotionDetector") ||
         strstr(response, "VideoAnalytics/Motion") ||
         strstr(response, "MotionAlarm")) {
+        return true;
+    }
+
+    // Tapo / TP-Link specific topics (e.g. C545D firmware):
+    //   tns1:RuleEngine/CellMotionDetector/Motion  (IsMotion: true/false)
+    //   tns1:RuleEngine/PeopleDetector/People      (IsPeople: true/false)
+    if (strstr(response, "CellMotionDetector") ||
+        strstr(response, "PeopleDetector") ||
+        strstr(response, "IsMotion") ||
+        strstr(response, "IsPeople")) {
         return true;
     }
 
