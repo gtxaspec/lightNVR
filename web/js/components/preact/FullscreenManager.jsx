@@ -11,12 +11,26 @@ import { tinykeys } from 'tinykeys';
  * Finds the currently fullscreen .video-cell, locates its grid position, then
  * steps in the requested direction (with wrap-around), skipping empty cells.
  *
+ * IMPORTANT: The browser Fullscreen API is a *stack* — every requestFullscreen()
+ * call pushes a new entry, and exitFullscreen() only pops the top.  If we simply
+ * called nextCell.requestFullscreen() we would build up a stack [A, B, C, D],
+ * forcing the user to "unwind" every visited stream before returning to the grid.
+ * To avoid that, we always exitFullscreen() first (draining the stack to empty),
+ * wait for the fullscreenchange event, then requestFullscreen() on the next cell.
+ * A guard flag prevents overlapping transitions from rapid key presses.
+ *
  * @param {'ArrowLeft'|'ArrowRight'|'ArrowUp'|'ArrowDown'} direction
  * @param {Array}  streamsToShow - streams visible in the current page
  * @param {number} cols          - grid column count
  * @param {number} rows          - grid row count
  */
+
+// Guard: true while a fullscreen transition is in progress.
+let _fsNavBusy = false;
+
 function navigateFullscreenGrid(direction, streamsToShow, cols, rows) {
+  if (_fsNavBusy) return; // drop key if transition already underway
+
   const fullscreenEl = document.fullscreenElement;
   if (!fullscreenEl) return;
 
@@ -33,6 +47,7 @@ function navigateFullscreenGrid(direction, streamsToShow, cols, rows) {
   // Walk one step at a time in the requested direction, wrapping around, until
   // we land on a populated cell (or exhaust all possibilities).
   const maxAttempts = cols * rows;
+  let nextCell = null;
   for (let i = 0; i < maxAttempts; i++) {
     if (direction === 'ArrowRight') {
       nextCol = (nextCol + 1) % cols;
@@ -49,17 +64,40 @@ function navigateFullscreenGrid(direction, streamsToShow, cols, rows) {
       const nextStream = streamsToShow[nextIndex];
       // Query the DOM for the cell; it remains in the DOM even while another
       // element is in fullscreen mode.
-      const nextCell = document.querySelector(
+      const candidate = document.querySelector(
         `[data-stream-name="${CSS.escape(nextStream.name)}"].video-cell`
       );
-      if (nextCell && nextCell !== fullscreenEl) {
-        nextCell.requestFullscreen().catch(err => {
-          console.warn(`Grid nav fullscreen switch failed: ${err.message}`);
-        });
+      if (candidate && candidate !== fullscreenEl) {
+        nextCell = candidate;
       }
-      return;
+      break;
     }
   }
+
+  if (!nextCell) return;
+
+  // Exit fullscreen first to flush the stack, then re-enter for the next cell.
+  _fsNavBusy = true;
+
+  const onChanged = () => {
+    document.removeEventListener('fullscreenchange', onChanged);
+    if (!document.fullscreenElement) {
+      // Stack is now empty — enter fullscreen for the next cell.
+      nextCell.requestFullscreen()
+        .catch(err => console.warn(`Grid nav fullscreen switch failed: ${err.message}`))
+        .finally(() => { _fsNavBusy = false; });
+    } else {
+      // Something else grabbed fullscreen unexpectedly; just release the guard.
+      _fsNavBusy = false;
+    }
+  };
+
+  document.addEventListener('fullscreenchange', onChanged);
+  document.exitFullscreen().catch(err => {
+    document.removeEventListener('fullscreenchange', onChanged);
+    console.warn(`Grid nav fullscreen exit failed: ${err.message}`);
+    _fsNavBusy = false;
+  });
 }
 
 /**
