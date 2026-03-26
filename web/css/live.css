@@ -55,7 +55,6 @@
 
 .video-cell:hover {
     box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
-    transform: translateY(-3px);
     z-index: 2;
 }
 
