@@ -23,6 +23,7 @@ static struct {
 } json_logger = {
     .log_file = NULL,
     .log_filename = "",
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
     .initialized = 0
 };
 

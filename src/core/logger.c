@@ -34,6 +34,7 @@ static struct {
     .log_level = LOG_LEVEL_INFO,
     .console_logging = 1,
     .log_filename = "",
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
     .syslog_enabled = 0,
     .syslog_ident = "",
     .shutdown = 0,

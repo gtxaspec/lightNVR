@@ -38,6 +38,7 @@ static stream_storage_cache_t cache = {
     .stream_count = 0,
     .last_update = 0,
     .ttl_seconds = 1800, // Default TTL: 30 minutes
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
     .initialized = 0
 };
 
