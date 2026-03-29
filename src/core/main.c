@@ -593,80 +593,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Copy to global config
-    memcpy(&g_config, &config, sizeof(config_t));
-
-    if (generate_go2rtc_config_only) {
-#ifdef USE_GO2RTC
-        if (curl_init_global() != 0) {
-            log_error("Failed to initialize libcurl globally for go2rtc config generation");
-            return EXIT_FAILURE;
-        }
-
-        const char *go2rtc_binary = config.go2rtc_binary_path[0] != '\0'
-                                   ? config.go2rtc_binary_path : NULL;
-        const char *go2rtc_config_dir = config.go2rtc_config_dir[0] != '\0'
-                                       ? config.go2rtc_config_dir : "/etc/lightnvr/go2rtc";
-        bool generated = go2rtc_process_generate_startup_config(go2rtc_binary,
-                                                                go2rtc_config_dir,
-                                                                config.go2rtc_api_port);
-        curl_cleanup_global();
-        return generated ? EXIT_SUCCESS : EXIT_FAILURE;
-#else
-        log_error("--generate-go2rtc-config requested but go2rtc support is disabled in this build");
-        return EXIT_FAILURE;
-#endif
-    }
-
-    log_info("LightNVR v%s starting up", LIGHTNVR_VERSION_STRING);
-
-    // Detect if we're running in a container
-    container_mode = detect_container_mode();
-    if (container_mode) {
-        log_info("Container mode detected - restart will exit and rely on container orchestrator");
-    } else {
-        log_info("Native mode detected - restart will use execv()");
-    }
-
-    // Initialize libcurl globally (MUST be done once at startup, before any threads)
-    if (curl_init_global() != 0) {
-        log_error("Failed to initialize libcurl globally");
-        return EXIT_FAILURE;
-    }
-    log_info("libcurl initialized globally");
-
-    // Initialize database
-    if (init_database(config.db_path) != 0) {
-        log_error("Failed to initialize database");
-        goto cleanup;
-    }
-
-    // Initialize schema cache
-    log_info("Initializing schema cache...");
-    init_schema_cache();
-    log_info("Schema cache initialized");
-
-    // Initialize storage manager
-    if (init_storage_manager(config.storage_path, config.max_storage_size) != 0) {
-        log_error("Failed to initialize storage manager");
-        goto cleanup;
-    }
-    log_info("Storage manager initialized");
-
-    // Start recording sync thread to ensure database file sizes are accurate
-    log_info("Starting recording sync thread...");
-    if (start_recording_sync_thread(60) != 0) {
-        log_warn("Failed to start recording sync thread, file sizes may not be accurate");
-    } else {
-        log_info("Recording sync thread started");
-    }
-
-    // Load stream configurations from database
-    if (load_stream_configs(&config) < 0) {
-        log_error("Failed to load stream configurations from database");
-        // Continue anyway, we'll use empty stream configurations
-    }
-
     // Set log file from configuration
     if (config.log_file[0] != '\0') {
         if (set_log_file(config.log_file) != 0) {
@@ -694,8 +620,115 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Copy to global config
+    memcpy(&g_config, &config, sizeof(config_t));
+
+    if (generate_go2rtc_config_only) {
+#ifdef USE_GO2RTC
+        if (curl_init_global() != 0) {
+            log_error("Failed to initialize libcurl globally for go2rtc config generation");
+            return EXIT_FAILURE;
+        }
+
+        const char *go2rtc_binary = config.go2rtc_binary_path[0] != '\0'
+                                   ? config.go2rtc_binary_path : NULL;
+        const char *go2rtc_config_dir = config.go2rtc_config_dir[0] != '\0'
+                                       ? config.go2rtc_config_dir : "/etc/lightnvr/go2rtc";
+        bool generated = go2rtc_process_generate_startup_config(go2rtc_binary,
+                                                                go2rtc_config_dir,
+                                                                config.go2rtc_api_port);
+        curl_cleanup_global();
+        return generated ? EXIT_SUCCESS : EXIT_FAILURE;
+#else
+        log_error("--generate-go2rtc-config requested but go2rtc support is disabled in this build");
+        return EXIT_FAILURE;
+#endif
+    }
+
+    log_info("LightNVR v%s starting up", LIGHTNVR_VERSION_STRING);
+
+    // Initialize shutdown coordinator
+    if (init_shutdown_coordinator() != 0) {
+        log_error("Failed to initialize shutdown coordinator");
+        return EXIT_FAILURE;
+    }
+    log_info("Shutdown coordinator initialized");
+
+    // Initialize signal handlers
+    init_signals();
+
+    // Check for existing instances and handle PID file
+    if (check_and_kill_existing_instance(config.pid_file) != 0) {
+        log_error("Failed to handle existing instance");
+        return EXIT_FAILURE;
+    }
+
+    // Daemonize if requested. This needs to happen before launching any threads.
+    if (daemon_mode) {
+        log_info("Starting in daemon mode");
+        if (daemonize(config.pid_file) != 0) {
+            log_error("Failed to daemonize");
+            return EXIT_FAILURE;
+        }
+        // In daemon mode, the PID file is handled by daemon.c
+    } else {
+        // Create PID file (only for non-daemon mode)
+        pid_fd = create_pid_file(config.pid_file);
+        if (pid_fd < 0) {
+            log_error("Failed to create PID file");
+            return EXIT_FAILURE;
+        }
+    }
+
+    // Detect if we're running in a container
+    container_mode = detect_container_mode();
+    if (container_mode) {
+        log_info("Container mode detected - restart will exit and rely on container orchestrator");
+    } else {
+        log_info("Native mode detected - restart will use execv()");
+    }
+
+    // Initialize libcurl globally (MUST be done once at startup, before any threads)
+    if (curl_init_global() != 0) {
+        log_error("Failed to initialize libcurl globally");
+        return EXIT_FAILURE;
+    }
+    log_info("libcurl initialized globally");
+
+    // Initialize database
+    if (init_database(config.db_path) != 0) {
+        log_error("Failed to initialize database");
+        goto cleanup;
+    }
+
+    // Initialize schema cache
+    log_info("Initializing schema cache...");
+    init_schema_cache();
+    log_info("Schema cache initialized");
+
+    // Load stream configurations from database
+    if (load_stream_configs(&config) < 0) {
+        log_error("Failed to load stream configurations from database");
+        // Continue anyway, we'll use empty stream configurations
+    }
+
     // Copy configuration to global config
     memcpy(&g_config, &config, sizeof(config_t));
+
+    // Initialize storage manager
+    if (init_storage_manager(config.storage_path, config.max_storage_size) != 0) {
+        log_error("Failed to initialize storage manager");
+        goto cleanup;
+    }
+    log_info("Storage manager initialized");
+
+    // Start recording sync thread to ensure database file sizes are accurate
+    log_info("Starting recording sync thread...");
+    if (start_recording_sync_thread(60) != 0) {
+        log_warn("Failed to start recording sync thread, file sizes may not be accurate");
+    } else {
+        log_info("Recording sync thread started");
+    }
 
     // Verify web root directory exists and is readable
     struct stat st;
@@ -750,39 +783,6 @@ int main(int argc, char *argv[]) {
             }
 
             log_info("Created web root directory: %s", config.web_root);
-        }
-    }
-
-    // Initialize shutdown coordinator
-    if (init_shutdown_coordinator() != 0) {
-        log_error("Failed to initialize shutdown coordinator");
-        return EXIT_FAILURE;
-    }
-    log_info("Shutdown coordinator initialized");
-
-    // Initialize signal handlers
-    init_signals();
-
-    // Check for existing instances and handle PID file
-    if (check_and_kill_existing_instance(config.pid_file) != 0) {
-        log_error("Failed to handle existing instance");
-        return EXIT_FAILURE;
-    }
-
-    // Daemonize if requested
-    if (daemon_mode) {
-        log_info("Starting in daemon mode");
-        if (daemonize(config.pid_file) != 0) {
-            log_error("Failed to daemonize");
-            return EXIT_FAILURE;
-        }
-        // In daemon mode, the PID file is handled by daemon.c
-    } else {
-        // Create PID file (only for non-daemon mode)
-        pid_fd = create_pid_file(config.pid_file);
-        if (pid_fd < 0) {
-            log_error("Failed to create PID file");
-            return EXIT_FAILURE;
         }
     }
 
