@@ -118,6 +118,14 @@ int log_rotate(size_t max_size, int max_files);
 const char *get_log_level_string(log_level_t level);
 
 /**
+ * @brief Map log level strings to numeric values (case-insensitive).
+ *
+ * @param log_level The log level as a string
+ * @return The numeric log_level_t enum, LOG_LEVEL_INFO if no match
+ */
+log_level_t parse_log_level_string(const char *log_level);
+
+/**
  * Enable syslog logging
  *
  * @param ident Syslog identifier (application name)

@@ -499,6 +499,29 @@ const char *get_log_level_string(log_level_t level) {
     return "UNKNOWN";
 }
 
+// Parse the log level string and return the associated enum
+log_level_t parse_log_level_string(const char *log_level) {
+    int level_value = LOG_LEVEL_INFO; // Default to INFO
+
+    if (log_level == NULL) {
+        return level_value;
+    }
+
+    // "WARN" (written by the logger) is accepted as an alias for "WARNING".
+    // ERROR = 0, WARNING = 1, INFO = 2, DEBUG = 3
+    if (strcasecmp(log_level, "error") == 0) {
+        level_value = LOG_LEVEL_ERROR;
+    } else if (strcasecmp(log_level, "warning") == 0 || strcasecmp(log_level, "warn") == 0) {
+        level_value = LOG_LEVEL_WARN;
+    } else if (strcasecmp(log_level, "info") == 0) {
+        level_value = LOG_LEVEL_INFO;
+    } else if (strcasecmp(log_level, "debug") == 0) {
+        level_value = LOG_LEVEL_DEBUG;
+    }
+
+    return level_value;
+}
+
 // Rotate log files if they exceed a certain size
 int log_rotate(size_t max_size, int max_files) {
     if (logger.log_filename[0] == '\0') {

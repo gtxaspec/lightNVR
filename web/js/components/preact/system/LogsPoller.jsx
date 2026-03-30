@@ -25,8 +25,10 @@ export function LogsPoller({ logLevel, logCount, pollingInterval = 5000, onLogsR
   // before the next fetch fires.
   const onLogsReceivedRef = useRef(onLogsReceived);
   const logLevelRef = useRef(logLevel);
+  const logCountRef = useRef(logCount);
   onLogsReceivedRef.current = onLogsReceived;
-  logLevelRef.current = logLevel;
+  logLevelRef.current = String(logLevel).toLowerCase();
+  logCountRef.current = parseInt(logCount);
 
   // Load saved timestamp from localStorage on mount
   useEffect(() => {
@@ -46,10 +48,14 @@ export function LogsPoller({ logLevel, logCount, pollingInterval = 5000, onLogsR
       return;
     }
 
-    console.log('Fetching logs via HTTP API with level=debug (debug and above); additional filtering will be applied on the frontend');
+    const normalizedLevel = logLevelRef.current;
+    const logCount = logCountRef.current;
+
+    console.log(`Fetching logs via HTTP API with level=${normalizedLevel} (${normalizedLevel} and above); additional filtering will be applied on the frontend`);
 
     try {
-      const response = await fetchJSON('/api/system/logs?level=debug', {
+      const log_uri = `/api/system/logs?level=${encodeURIComponent(normalizedLevel)}&count=${encodeURIComponent(logCount)}`;
+      const response = await fetchJSON(log_uri, {
         timeout: 10000,
         retries: 1
       });
@@ -80,14 +86,16 @@ export function LogsPoller({ logLevel, logCount, pollingInterval = 5000, onLogsR
         }
 
         // Filter using the latest logLevel from the ref (hierarchical: 'debug' = all)
-        const currentLevel = logLevelRef.current;
         let filteredLogs = cleanedLogs;
-        if (currentLevel) {
-          const normalizedLevel = String(currentLevel).toLowerCase();
+        if (normalizedLevel) {
           filteredLogs = cleanedLogs.filter(log => log_level_meets_minimum(log.level, normalizedLevel));
         }
 
         console.log(`Received ${filteredLogs.length} logs via HTTP API after filtering`);
+        if (filteredLogs.length > logCount) {
+          // Shrink to requested size if we received more than expected
+          filteredLogs = filteredLogs.slice(0, logCount)
+        }
         onLogsReceivedRef.current(filteredLogs);
       } else {
         console.log('No logs received from API');

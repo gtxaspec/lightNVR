@@ -21,21 +21,11 @@
 #include "core/logger.h"
 #include "core/config.h"
 
-/* Forward declaration: retrieves the most recent JSON log entries filtered by level and source. */
-int get_json_logs_tail(const char *level, const char *source, char ***logs, int *log_count);
-
-typedef enum {
-    SYSLOG_LEVEL_ERROR   = 0,
-    SYSLOG_LEVEL_WARNING = 1,
-    SYSLOG_LEVEL_INFO    = 2,
-    SYSLOG_LEVEL_DEBUG   = 3
-} LogLevel;
-
 static const char *DEFAULT_LOG_FILE = "/var/log/lightnvr.log";
 static const char *FALLBACK_LOG_FILE = "./lightnvr.log";
 static const long MAX_LOG_TAIL_SIZE = 100L * 1024; // 100KB
 #define MAX_LOG_LEVEL_LENGTH 16
-static const int DEFAULT_MAX_LOG_ENTRIES = 250;
+static const int DEFAULT_MAX_LOG_ENTRIES = 500;
 
 /**
  * @brief Validate that the log file path does not contain suspicious path traversal components.
@@ -96,225 +86,6 @@ static bool is_safe_log_path(const char *path) {
 }
 
 /**
- * @brief Get system logs
- *
- * Legacy API retained for backward compatibility. New code should use
- * get_json_logs_tail() instead, which is the preferred way of obtaining
- * log data for API responses.
- *
- * @param logs Pointer to array of log strings (will be allocated)
- * @param count Pointer to store number of logs
- * @return int 0 on success, -1 on failure
- */
-int get_system_logs(char ***logs, int *count) {
-    // Initialize output parameters
-    *logs = NULL;
-    *count = 0;
-
-    // Check if log file is set
-    if (g_config.log_file[0] == '\0') {
-        log_error("Log file not configured");
-        return -1;
-    }
-
-    // Open log file
-    FILE *log_file = fopen(g_config.log_file, "r");
-    if (!log_file) {
-        log_error("Failed to open log file: %s", g_config.log_file);
-        return -1;
-    }
-
-    // Get file size
-    if (fseek(log_file, 0, SEEK_END) != 0) {
-        log_error("Failed to seek to end of log file: %s", g_config.log_file);
-        fclose(log_file);
-        return -1;
-    }
-    long file_size = ftell(log_file);
-    if (file_size < 0) {
-        log_error("Failed to determine size of log file: %s", g_config.log_file);
-        fclose(log_file);
-        return -1;
-    }
-
-    // Limit to last 100KB if file is larger
-    const long max_size = MAX_LOG_TAIL_SIZE;
-    long read_size = file_size;
-    long offset = 0;
-
-    if (file_size > max_size) {
-        read_size = max_size;
-        offset = file_size - max_size;
-    }
-
-    // Allocate buffer
-    char *buffer = malloc(read_size + 1);
-    if (!buffer) {
-        log_error("Failed to allocate memory for log file");
-        fclose(log_file);
-        return -1;
-    }
-
-    // Read log file
-    if (fseek(log_file, offset, SEEK_SET) != 0) {
-        log_error("Failed to seek to offset %ld in log file: %s", offset, g_config.log_file);
-        free(buffer);
-        fclose(log_file);
-        return -1;
-    }
-    size_t bytes_read = fread(buffer, 1, (size_t)read_size, log_file);
-    // Clamp to allocated size in case of unexpected fread result
-    if (bytes_read > (size_t)read_size) bytes_read = (size_t)read_size;
-    buffer[bytes_read] = '\0';
-
-    // Close file
-    fclose(log_file);
-
-    // Count number of lines
-    int line_count = 0;
-    for (size_t i = 0; i < bytes_read; i++) {
-        if (buffer[i] == '\n') {
-            line_count++;
-        }
-    }
-
-    // Add one more for the last line if it doesn't end with a newline
-    if (bytes_read > 0 && buffer[bytes_read - 1] != '\n') {
-        line_count++;
-    }
-
-    // If no lines, return empty result
-    if (line_count == 0) {
-        free(buffer);
-        *logs = NULL;
-        *count = 0;
-        return 0;
-    }
-
-    // Limit the maximum number of lines to prevent excessive memory usage
-    const int max_lines = 500;
-    int lines_to_allocate = line_count;
-    if (lines_to_allocate > max_lines) {
-        log_info("Limiting log lines from %d to %d to prevent excessive memory usage", line_count, max_lines);
-        lines_to_allocate = max_lines;
-    }
-
-    // Allocate array of log strings
-    char **log_lines = (char **)calloc(lines_to_allocate, sizeof(char *));
-    if (!log_lines) {
-        log_error("Failed to allocate memory for log lines");
-        free(buffer);
-        return -1;
-    }
-
-    // Split buffer into lines
-    char *saveptr;
-    const char *line = strtok_r(buffer, "\n", &saveptr);
-    int log_index = 0;
-
-    while (line != NULL && log_index < lines_to_allocate) {
-        // Skip empty lines
-        if (*line == '\0') {
-            line = strtok_r(NULL, "\n", &saveptr);
-            continue;
-        }
-
-        // Allocate memory for the log line
-        log_lines[log_index] = strdup(line);
-        if (!log_lines[log_index]) {
-            log_error("Failed to allocate memory for log line");
-
-            // Free previously allocated lines
-            for (int i = 0; i < log_index; i++) {
-                if (log_lines[i]) {
-                    free(log_lines[i]);
-                    log_lines[i] = NULL;
-                }
-            }
-            free((void *)log_lines);
-            free(buffer);
-            return -1;
-        }
-
-        log_index++;
-        line = strtok_r(NULL, "\n", &saveptr);
-    }
-
-    // Set output parameters
-    *logs = log_lines;
-    *count = log_index;
-
-    // Free buffer
-    free(buffer);
-
-    return 0;
-}
-
-/**
- * @brief Check if a log level meets the minimum required level
- *
- * @param log_level The log level to check
- * @param min_level The minimum required level
- * @return int 1 if the log level meets the minimum, 0 otherwise
- */
-int log_level_meets_minimum(const char *log_level, const char *min_level) {
-    // Validate input pointers to avoid passing NULL to strcmp
-    if (log_level == NULL || min_level == NULL) {
-        log_error("log_level_meets_minimum called with NULL argument: log_level=%p, min_level=%p",
-                  (void *)log_level, (void *)min_level);
-        return 0;
-    }
-
-    // Convert log levels to numeric values for comparison
-    int level_value = SYSLOG_LEVEL_INFO; // Default to INFO
-    int min_value = SYSLOG_LEVEL_INFO;   // Default to INFO
-
-    // Map log level strings to numeric values (case-insensitive).
-    // "WARN" (written by the logger) is accepted as an alias for "WARNING".
-    // ERROR = 0, WARNING = 1, INFO = 2, DEBUG = 3
-    if (strcasecmp(log_level, "error") == 0) {
-        level_value = SYSLOG_LEVEL_ERROR;
-    } else if (strcasecmp(log_level, "warning") == 0 || strcasecmp(log_level, "warn") == 0) {
-        level_value = SYSLOG_LEVEL_WARNING;
-    } else if (strcasecmp(log_level, "info") == 0) {
-        level_value = SYSLOG_LEVEL_INFO;
-    } else if (strcasecmp(log_level, "debug") == 0) {
-        level_value = SYSLOG_LEVEL_DEBUG;
-    }
-
-    if (strcasecmp(min_level, "error") == 0) {
-        min_value = SYSLOG_LEVEL_ERROR;
-    } else if (strcasecmp(min_level, "warning") == 0 || strcasecmp(min_level, "warn") == 0) {
-        min_value = SYSLOG_LEVEL_WARNING;
-    } else if (strcasecmp(min_level, "info") == 0) {
-        min_value = SYSLOG_LEVEL_INFO;
-    } else if (strcasecmp(min_level, "debug") == 0) {
-        min_value = SYSLOG_LEVEL_DEBUG;
-    }
-
-    // NOTE: Lower numeric values represent *higher* severity:
-    //   error   = SYSLOG_LEVEL_ERROR   (0, most severe)
-    //   warning = SYSLOG_LEVEL_WARNING (1)
-    //   info    = SYSLOG_LEVEL_INFO    (2)
-    //   debug   = SYSLOG_LEVEL_DEBUG   (3, least severe)
-    //
-    // The min_level parameter represents the least severe messages we still
-    // want to include. A log entry should be included if its severity is
-    // greater than or equal to this minimum severity (i.e., numerically
-    // less than or equal to min_value).
-    //
-    // Examples:
-    //   min_level = "error"  (0) -> include only "error"      (0)
-    //   min_level = "warning"(1) -> include "error"(0) and "warning"(1)
-    //   min_level = "info"   (2) -> include error(0), warning(1), info(2)
-    //   min_level = "debug"  (3) -> include all levels
-    //
-    // Therefore, we return true if the log level value is LESS THAN OR EQUAL
-    // TO the minimum level value.
-    return level_value <= min_value;
-}
-
-/**
  * @brief Direct handler for GET /api/system/logs
  */
 void handle_get_system_logs(const http_request_t *req, http_response_t *res) {
@@ -326,27 +97,22 @@ void handle_get_system_logs(const http_request_t *req, http_response_t *res) {
     }
 
     // Get query parameters
-    char level[MAX_LOG_LEVEL_LENGTH] = "debug";
+    log_level_t level = LOG_LEVEL_DEBUG;
+    int max_lines = DEFAULT_MAX_LOG_ENTRIES;
 
+    char param_buf[32] = {0};
+    char *last_ts = NULL;
     // Extract log level from query parameters
-    char level_buf[MAX_LOG_LEVEL_LENGTH] = {0};
-    if (http_request_get_query_param(req, "level", level_buf, sizeof(level_buf)) > 0 && level_buf[0]) {
-        strncpy(level, level_buf, sizeof(level) - 1);
-        level[sizeof(level) - 1] = '\0';
+    if (http_request_get_query_param(req, "level", param_buf, sizeof(param_buf)) > 0 && param_buf[0]) {
+        level = parse_log_level_string(param_buf);
     }
-
-    // Get system logs
-    char **logs = NULL;
-    // actual_log_count is the output (actual number of logs returned) by get_json_logs_tail().
-    int actual_log_count = 0;                    // Will be updated by get_json_logs_tail()
-
-    // Second argument is the optional source/filter/context; NULL means "no specific filter" (use default system logs)
-    // Note: actual_log_count is updated by get_json_logs_tail() to the actual number of logs returned.
-    const int result = get_json_logs_tail(level, NULL, &logs, &actual_log_count);
-
-    if (result != 0 || !logs) {
-        http_response_set_json_error(res, 500, "Failed to get system logs");
-        return;
+    // Extract requested line count
+    if (http_request_get_query_param(req, "count", param_buf, sizeof(param_buf)) > 0 && param_buf[0]) {
+        max_lines = atoi(param_buf);
+    }
+    // Extract last timestamp. Leave the value in param_buf! Must be the last parameter parsed
+    if (http_request_get_query_param(req, "last_ts", param_buf, sizeof(param_buf)) > 0 && param_buf[0]) {
+        last_ts = param_buf;
     }
 
     // Create JSON object
@@ -354,72 +120,19 @@ void handle_get_system_logs(const http_request_t *req, http_response_t *res) {
     if (!logs_obj) {
         log_error("Failed to create logs JSON object");
 
-        // Free logs
-        for (int i = 0; i < actual_log_count; i++) {
-            if (logs[i]) {
-                free(logs[i]);
-            }
-        }
-        free((void *)logs);
-
         http_response_set_json_error(res, 500, "Failed to create logs JSON");
         return;
     }
 
-    // Create logs array
-    cJSON *logs_array = cJSON_CreateArray();
-    if (!logs_array) {
-        log_error("Failed to create logs array");
+    // Retrieve the cJSON array of the last `max_lines` lines after `last_ts`.
+    cJSON *logs_array = get_json_logs_tail(level, last_ts, max_lines);
 
-        // Free logs
-        for (int i = 0; i < actual_log_count; i++) {
-            if (logs[i]) {
-                free(logs[i]);
-            }
-        }
-        free((void *)logs);
+    if (logs_array == NULL) {
+        log_error("Failed to get JSON logs");
 
+        http_response_set_json_error(res, 500, "Failed to get system logs");
         cJSON_Delete(logs_obj);
-        http_response_set_json_error(res, 500, "Failed to create logs array");
         return;
-    }
-
-    // Parse and add logs to array as objects
-    // Note: get_json_logs_tail returns JSON-formatted strings, so we need to parse them
-    for (int i = 0; i < actual_log_count; i++) {
-        if (logs[i] != NULL) {
-            // Parse the JSON string
-            cJSON *log_json = cJSON_Parse(logs[i]);
-            if (!log_json) {
-                log_error("Failed to parse log JSON: %s", logs[i]);
-                continue;
-            }
-
-            // Extract fields from JSON
-            cJSON *timestamp_json = cJSON_GetObjectItem(log_json, "timestamp");
-            cJSON *level_json = cJSON_GetObjectItem(log_json, "level");
-            cJSON *message_json = cJSON_GetObjectItem(log_json, "message");
-
-            const char *timestamp = timestamp_json && cJSON_IsString(timestamp_json) ? timestamp_json->valuestring : "Unknown";
-            const char *log_level = level_json && cJSON_IsString(level_json) ? level_json->valuestring : "Unknown";
-            const char *message = message_json && cJSON_IsString(message_json) ? message_json->valuestring : "Unknown";
-
-            // Check if this log meets the minimum level
-            if (log_level_meets_minimum(log_level, level)) {
-                // Create log entry object
-                cJSON *log_entry = cJSON_CreateObject();
-                if (log_entry) {
-                    cJSON_AddStringToObject(log_entry, "timestamp", timestamp);
-                    cJSON_AddStringToObject(log_entry, "level", log_level);
-                    cJSON_AddStringToObject(log_entry, "message", message);
-
-                    cJSON_AddItemToArray(logs_array, log_entry);
-                }
-            }
-
-            // Clean up parsed JSON
-            cJSON_Delete(log_json);
-        }
     }
 
     // Add logs array to response
@@ -427,20 +140,12 @@ void handle_get_system_logs(const http_request_t *req, http_response_t *res) {
 
     // Add metadata
     cJSON_AddStringToObject(logs_obj, "file", g_config.log_file);
-    cJSON_AddStringToObject(logs_obj, "level", level);
+    cJSON_AddStringToObject(logs_obj, "level", get_log_level_string(level));
 
     // Convert to string
     char *json_str = cJSON_PrintUnformatted(logs_obj);
 
     // Clean up
-    if (logs) {
-        for (int i = 0; i < actual_log_count; i++) {
-            if (logs[i]) {
-                free(logs[i]);
-            }
-        }
-        free((void *)logs);
-    }
     cJSON_Delete(logs_obj);
 
     if (!json_str) {

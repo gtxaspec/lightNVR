@@ -353,7 +353,6 @@ static bool get_detector_memory_usage(unsigned long long *memory_usage) {
 // Forward declarations from api_handlers_system_logs.c
 extern void handle_get_system_logs(const http_request_t *req, http_response_t *res);
 extern void handle_post_system_logs_clear(const http_request_t *req, http_response_t *res);
-extern int get_system_logs(char ***logs, int *count);
 
 // ── cgroup-aware resource helpers ──────────────────────────────────────────
 // Prefer cgroup limits (container / K8s pod) when available, otherwise fall
