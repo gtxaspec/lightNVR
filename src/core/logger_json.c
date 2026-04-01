@@ -10,6 +10,7 @@
 #include <libgen.h>
 #include <time.h>
 
+#include "core/config.h"
 #include "core/logger.h"
 #include "core/logger_json.h"
 #include <cjson/cJSON.h>
@@ -444,8 +445,8 @@ int json_log_rotate(size_t max_size, int max_files) {
     }
     
     // Rotate log files
-    char old_path[512];
-    char new_path[512];
+    char old_path[MAX_PATH_LENGTH];
+    char new_path[MAX_PATH_LENGTH];
     
     // Remove oldest log file if it exists
     snprintf(old_path, sizeof(old_path), "%s.%d", json_logger.log_filename, max_files);

@@ -95,6 +95,12 @@ void test_url_build_onvif_service_url_https_source_preserved(void) {
     TEST_ASSERT_EQUAL_STRING("https://camera:443/onvif/ptz_service", url);
 }
 
+void test_simple_url_escape(void) {
+    char url[256];
+    simple_url_escape("^.*$ /cgi-bin/httpreq.pl", url, 256);
+    TEST_ASSERT_EQUAL_STRING("%5E.%2A%24%20%2Fcgi-bin%2Fhttpreq.pl", url);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_url_apply_credentials_injects_credentials);
@@ -111,5 +117,6 @@ int main(void) {
     RUN_TEST(test_url_build_onvif_service_url_strips_credentials);
     RUN_TEST(test_url_build_onvif_service_url_null_path_returns_base_url);
     RUN_TEST(test_url_build_onvif_service_url_https_source_preserved);
+    RUN_TEST(test_simple_url_escape);
     return UNITY_END();
 }

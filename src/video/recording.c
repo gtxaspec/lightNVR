@@ -12,6 +12,7 @@
 
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
 #include "video/mp4_writer.h"
@@ -400,9 +401,13 @@ int find_mp4_recording(const char *stream_name, time_t timestamp, char *mp4_path
     char prefix[64];
     snprintf(prefix, sizeof(prefix), "recording_%s", timestamp_str);
 
+    // Make sure we're using a valid path.
+    char stream_path[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
+
     // 1. Try main recordings directory with stream subdirectory
     snprintf(base_path, sizeof(base_path), "%s/recordings/%s",
-            global_config->storage_path, stream_name);
+            global_config->storage_path, stream_path);
 
     log_info("Looking for MP4 recording for stream '%s' with timestamp around %s in %s",
             stream_name, timestamp_str, base_path);
@@ -417,7 +422,7 @@ int find_mp4_recording(const char *stream_name, time_t timestamp, char *mp4_path
     // 2. Try alternative location if MP4 direct storage is configured
     if (global_config->record_mp4_directly && global_config->mp4_storage_path[0] != '\0') {
         snprintf(base_path, sizeof(base_path), "%s/%s",
-                global_config->mp4_storage_path, stream_name);
+                global_config->mp4_storage_path, stream_path);
         log_info("Looking in alternative MP4 location: %s", base_path);
 
         if (find_first_mp4_in_dir(base_path, prefix, false, mp4_path, path_size)) {
@@ -431,7 +436,7 @@ int find_mp4_recording(const char *stream_name, time_t timestamp, char *mp4_path
 
     // 3. Try the HLS directory (any .mp4 file)
     snprintf(base_path, sizeof(base_path), "%s/hls/%s",
-            global_config->storage_path, stream_name);
+            global_config->storage_path, stream_path);
     log_info("Looking in HLS directory: %s", base_path);
 
     if (find_first_mp4_in_dir(base_path, NULL, true, mp4_path, path_size)) {

@@ -1,6 +1,7 @@
 #include "core/url_utils.h"
 
 #include <curl/curl.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -453,4 +454,20 @@ int url_redact_for_logging(const char *url, char *out_url, size_t out_size) {
     }
 
     return copy_string("[invalid-url]", out_url, out_size);
+}
+
+// Simple URL encoding for special characters
+void simple_url_escape(const char *input, char *output, size_t output_size) {
+    const char *p = input;
+    char *q = output;
+    while (*p && (q - output < output_size - 4)) {
+        if (isalnum(*p) || *p == '-' || *p == '_' || *p == '.' || *p == '~') {
+            *q++ = *p;
+        } else {
+            sprintf(q, "%%%02X", (unsigned char)*p);
+            q += 3;
+        }
+        p++;
+    }
+    *q = '\0';
 }

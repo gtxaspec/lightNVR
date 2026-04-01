@@ -110,11 +110,11 @@ int set_stream_retention_config(const char *stream_name, const stream_retention_
 /**
  * Get all stream names for retention policy processing
  *
- * @param names Array of stream name buffers (each should be at least 64 chars)
+ * @param names Array of stream name buffers (each should be MAX_STREAM_NAME chars)
  * @param max_count Maximum number of stream names to return
  * @return Number of streams found, or -1 on error
  */
-int get_all_stream_names(char names[][64], int max_count);
+int get_all_stream_names(char names[][MAX_STREAM_NAME], int max_count);
 
 /**
  * Get storage usage for a stream in bytes

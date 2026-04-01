@@ -30,9 +30,6 @@ const char *get_request_header(const http_request_t *request, const char *name);
 int set_response_header(http_response_t *response, const char *name, const char *value);
 int get_web_server_stats(int *active_connections, double *requests_per_second, uint64_t *bytes_sent, uint64_t *bytes_received);
 
-// URL utilities
-int url_decode(const char *src, char *dst, size_t dst_size);
-
 // Helper functions
 void cleanup_request(http_request_t *request);
 void cleanup_response(http_response_t *response);

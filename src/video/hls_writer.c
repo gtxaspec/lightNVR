@@ -386,7 +386,8 @@ static int ensure_output_directory(hls_writer_t *writer) {
     const char *dir_path = writer->output_dir;
 
     //  Always use the consistent path structure for HLS
-    // Extract stream name from the path (last component)
+    // Extract stream name from the path (last component). Note that this path is
+    // already sanitized for use as a directory path.
     const char *last_slash = strrchr(dir_path, '/');
     const char *stream_name = last_slash ? last_slash + 1 : dir_path;
 

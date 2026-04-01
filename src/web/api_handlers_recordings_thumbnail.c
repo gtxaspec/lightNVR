@@ -37,7 +37,7 @@
  * @brief Ensure the thumbnails directory exists
  */
 static int ensure_thumbnails_dir(const char *storage_path) {
-    char dir_path[512];
+    char dir_path[MAX_PATH_LENGTH];
     snprintf(dir_path, sizeof(dir_path), "%s/thumbnails", storage_path);
 
     struct stat st;
@@ -221,7 +221,7 @@ void handle_recordings_thumbnail(const http_request_t *req, http_response_t *res
     }
 
     // Build thumbnail path
-    char thumb_path[512];
+    char thumb_path[MAX_PATH_LENGTH];
     snprintf(thumb_path, sizeof(thumb_path), "%s/thumbnails/%llu_%d.jpg",
              g_config.storage_path, (unsigned long long)id, index);
 
@@ -314,7 +314,7 @@ void handle_recordings_thumbnail(const http_request_t *req, http_response_t *res
 
 void delete_recording_thumbnails(uint64_t recording_id) {
     for (int i = 0; i < 3; i++) {
-        char thumb_path[512];
+        char thumb_path[MAX_PATH_LENGTH];
         snprintf(thumb_path, sizeof(thumb_path), "%s/thumbnails/%llu_%d.jpg",
                  g_config.storage_path, (unsigned long long)recording_id, i);
         if (unlink(thumb_path) == 0) {

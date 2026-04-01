@@ -4,7 +4,9 @@
  */
 
 #include "video/go2rtc/go2rtc_api.h"
+#include "core/config.h"
 #include "core/logger.h"
+#include "core/url_utils.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,25 +131,14 @@ bool go2rtc_api_add_stream(const char *stream_id, const char *stream_url) {
     // This is the method that works according to user feedback
     // URL encode the stream_url to handle special characters
     char encoded_url[URL_BUFFER_SIZE * 3] = {0}; // Extra space for URL encoding
+    simple_url_escape(stream_url, encoded_url, URL_BUFFER_SIZE * 3);
 
-    // Simple URL encoding for special characters
-    const char *p = stream_url;
-    char *q = encoded_url;
-    while (*p && (q - encoded_url < URL_BUFFER_SIZE * 3 - 4)) {
-        if (isalnum(*p) || *p == '-' || *p == '_' || *p == '.' || *p == '~') {
-            *q++ = *p;
-        } else if (*p == ' ') {
-            *q++ = '+';
-        } else {
-            sprintf(q, "%%%02X", (unsigned char)*p);
-            q += 3;
-        }
-        p++;
-    }
-    *q = '\0';
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_stream_id[MAX_STREAM_NAME * 3];
+    simple_url_escape(stream_id, encoded_stream_id, MAX_STREAM_NAME * 3);
 
     snprintf(url, sizeof(url), "http://%s:%d" GO2RTC_BASE_PATH "/api/streams?src=%s&name=%s", // codeql[cpp/non-https-url] - localhost-only internal API
-            g_api_host, g_api_port, encoded_url, stream_id);
+            g_api_host, g_api_port, encoded_url, encoded_stream_id);
 
     log_info("Adding go2rtc stream source for %s", stream_id);
 
@@ -236,20 +227,7 @@ bool go2rtc_api_add_stream_multi(const char *stream_id, const char **sources, in
     for (int i = 0; i < num_sources; i++) {
         // URL encode the source
         char encoded_url[URL_BUFFER_SIZE * 3] = {0};
-        const char *p = sources[i];
-        char *q = encoded_url;
-        while (*p && (q - encoded_url < URL_BUFFER_SIZE * 3 - 4)) {
-            if (isalnum(*p) || *p == '-' || *p == '_' || *p == '.' || *p == '~') {
-                *q++ = *p;
-            } else if (*p == ' ') {
-                *q++ = '+';
-            } else {
-                sprintf(q, "%%%02X", (unsigned char)*p);
-                q += 3;
-            }
-            p++;
-        }
-        *q = '\0';
+        simple_url_escape(sources[i], encoded_url, URL_BUFFER_SIZE * 3);
 
         if (i > 0) {
             written = snprintf(url + offset, url_buf_size - offset, "&");
@@ -261,8 +239,12 @@ bool go2rtc_api_add_stream_multi(const char *stream_id, const char **sources, in
         offset += (size_t)written;
     }
 
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_stream_id[MAX_STREAM_NAME * 3];
+    simple_url_escape(stream_id, encoded_stream_id, MAX_STREAM_NAME * 3);
+
     // Add stream name
-    written = snprintf(url + offset, url_buf_size - offset, "&name=%s", stream_id);
+    written = snprintf(url + offset, url_buf_size - offset, "&name=%s", encoded_stream_id);
     if (written < 0 || (size_t)written >= url_buf_size - offset) {
         log_warn("URL truncated building go2rtc request for stream %s", stream_id);
     }
@@ -331,22 +313,13 @@ bool go2rtc_api_remove_stream(const char *stream_id) {
     response_buffer_t resp = { .size = 0 };
     resp.buffer[0] = '\0';
 
-    // URL-encode the stream ID so that names with spaces or other special
+    // Sanitize the stream ID so that names with spaces or other special
     // characters are correctly passed as the ?src= query parameter.
     // Without encoding, "My Camera" would become "?src=My Camera" which is
     // invalid HTTP and causes go2rtc to silently ignore the delete request,
     // leaving the stream registered and still attempting to reconnect.
-    char encoded_id[URL_BUFFER_SIZE];
-    char *enc = curl_easy_escape(curl, stream_id, 0);
-    if (enc) {
-        strncpy(encoded_id, enc, URL_BUFFER_SIZE - 1);
-        encoded_id[URL_BUFFER_SIZE - 1] = '\0';
-        curl_free(enc);
-    } else {
-        log_warn("Failed to URL-encode stream ID '%s' for delete, using raw name", stream_id);
-        strncpy(encoded_id, stream_id, URL_BUFFER_SIZE - 1);
-        encoded_id[URL_BUFFER_SIZE - 1] = '\0';
-    }
+    char encoded_id[URL_BUFFER_SIZE * 3];
+    simple_url_escape(stream_id, encoded_id, URL_BUFFER_SIZE * 3);
 
     // Format the URL for the API endpoint with the src parameter
     snprintf(url, sizeof(url), "http://%s:%d" GO2RTC_BASE_PATH "/api/streams?src=%s", g_api_host, g_api_port, encoded_id); // codeql[cpp/non-https-url] - localhost-only internal API
@@ -508,9 +481,12 @@ bool go2rtc_api_get_webrtc_url(const char *stream_id, char *buffer, size_t buffe
         log_error("Invalid parameters for go2rtc_api_get_webrtc_url");
         return false;
     }
-    
+
+    char encoded_stream_id[MAX_STREAM_NAME * 3];
+    simple_url_escape(stream_id, encoded_stream_id, MAX_STREAM_NAME * 3);
+
     // Format the WebRTC URL
-    snprintf(buffer, buffer_size, "http://%s:%d" GO2RTC_BASE_PATH "/webrtc/%s", g_api_host, g_api_port, stream_id); // codeql[cpp/non-https-url] - localhost-only internal API
+    snprintf(buffer, buffer_size, "http://%s:%d" GO2RTC_BASE_PATH "/webrtc/%s", g_api_host, g_api_port, encoded_stream_id); // codeql[cpp/non-https-url] - localhost-only internal API
     return true;
 }
 
@@ -745,18 +721,9 @@ static bool preload_attempt(const char *stream_id, const char *query, long timeo
         return false;
     }
 
-    // URL-encode the stream ID to handle names with spaces or special characters.
-    char encoded_id[URL_BUFFER_SIZE];
-    char *enc = curl_easy_escape(curl, stream_id, 0);
-    if (enc) {
-        strncpy(encoded_id, enc, URL_BUFFER_SIZE - 1);
-        encoded_id[URL_BUFFER_SIZE - 1] = '\0';
-        curl_free(enc);
-    } else {
-        log_warn("Failed to URL-encode stream ID '%s' for preload, using raw name", stream_id);
-        strncpy(encoded_id, stream_id, URL_BUFFER_SIZE - 1);
-        encoded_id[URL_BUFFER_SIZE - 1] = '\0';
-    }
+    // Sanitize the stream ID to handle names with spaces or special characters.
+    char encoded_id[URL_BUFFER_SIZE * 3];
+    simple_url_escape(stream_id, encoded_id, URL_BUFFER_SIZE * 3);
 
     char url[URL_BUFFER_SIZE];
     snprintf(url, sizeof(url), "http://%s:%d" GO2RTC_BASE_PATH "/api/preload?src=%s&%s", // codeql[cpp/non-https-url] - localhost-only internal API

@@ -62,7 +62,7 @@ int cleanup_old_recordings(const char *stream_name, int retention_days) {
              retention_days, stream_name ? stream_name : "all");
     
     // Get list of recordings to delete
-    char paths[1000][512];
+    char paths[1000][MAX_PATH_LENGTH];
     time_t timestamps[1000];
     uint64_t sizes[1000];
     

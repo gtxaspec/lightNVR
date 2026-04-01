@@ -9,6 +9,7 @@
 #define LOG_COMPONENT "StreamsAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 #include "web/http_server.h"
 #include "video/streams.h"
 
@@ -30,8 +31,6 @@ void handle_direct_hls_request(const http_request_t *req, http_response_t *res) 
 
     // Extract stream name from URI
     // URI format: /hls/{stream_name}/{file}
-    char stream_name[MAX_STREAM_NAME] = {0};
-    char decoded_stream_name[MAX_STREAM_NAME] = {0};
 
     // Validate URI format
     if (uri_len < 6 || strncmp(uri, "/hls/", 5) != 0) {
@@ -60,11 +59,19 @@ void handle_direct_hls_request(const http_request_t *req, http_response_t *res) 
     if (name_len >= MAX_STREAM_NAME) {
         name_len = MAX_STREAM_NAME - 1;
     }
-    strncpy(stream_name, stream_start, name_len);
-    stream_name[name_len] = '\0';
+
+    char encoded_stream_name[MAX_STREAM_NAME] = {0};
+    char stream_name[MAX_STREAM_NAME] = {0};
+    char stream_path[MAX_STREAM_NAME] = {0};
+
+    strncpy(encoded_stream_name, stream_start, name_len);
+    encoded_stream_name[name_len] = '\0';
 
     // URL decode the stream name
-    url_decode(stream_name, decoded_stream_name, sizeof(decoded_stream_name));
+    url_decode(encoded_stream_name, stream_name, MAX_STREAM_NAME);
+
+    // Make sure we're using a valid path.
+    sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
 
     // Extract file name (everything after the stream name)
     const char *file_name = file_part + 1; // Skip "/"
@@ -99,11 +106,11 @@ void handle_direct_hls_request(const http_request_t *req, http_response_t *res) 
     // Use storage_path_hls if specified, otherwise fall back to storage_path
     if (storage_path_hls[0] != '\0') {
         snprintf(hls_file_path, sizeof(hls_file_path), "%s/hls/%s/%s",
-                storage_path_hls, decoded_stream_name, file_name);
+                storage_path_hls, stream_path, file_name);
         log_debug("Using HLS-specific storage path: %s", storage_path_hls);
     } else {
         snprintf(hls_file_path, sizeof(hls_file_path), "%s/hls/%s/%s",
-                storage_path, decoded_stream_name, file_name);
+                storage_path, stream_path, file_name);
         log_debug("Using default storage path for HLS: %s", storage_path);
     }
 

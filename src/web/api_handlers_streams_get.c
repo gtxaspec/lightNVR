@@ -307,14 +307,10 @@ void handle_get_stream(const http_request_t *req, http_response_t *res) {
 
     log_info("Handling GET /api/streams/%s request", stream_id);
 
-    // URL-decode the stream identifier
-    char decoded_id[MAX_STREAM_NAME];
-    url_decode(stream_id, decoded_id, sizeof(decoded_id));
-
     // Find the stream by name
-    stream_handle_t stream = get_stream_by_name(decoded_id);
+    stream_handle_t stream = get_stream_by_name(stream_id);
     if (!stream) {
-        log_error("Stream not found: %s", decoded_id);
+        log_error("Stream not found: %s", stream_id);
         http_response_set_json_error(res, 404, "Stream not found");
         return;
     }
@@ -322,7 +318,7 @@ void handle_get_stream(const http_request_t *req, http_response_t *res) {
     // Get stream configuration
     stream_config_t config;
     if (get_stream_config(stream, &config) != 0) {
-        log_error("Failed to get stream configuration for: %s", decoded_id);
+        log_error("Failed to get stream configuration for: %s", stream_id);
         http_response_set_json_error(res, 500, "Failed to get stream configuration");
         return;
     }
@@ -440,7 +436,7 @@ void handle_get_stream(const http_request_t *req, http_response_t *res) {
     free(json_str);
     cJSON_Delete(stream_obj);
 
-    log_info("Successfully handled GET /api/streams/%s request", decoded_id);
+    log_info("Successfully handled GET /api/streams/%s request", stream_id);
 }
 
 /**
@@ -456,23 +452,19 @@ void handle_get_stream_full(const http_request_t *req, http_response_t *res) {
         return;
     }
 
-    // URL-decode the stream identifier
-    char decoded_id[MAX_STREAM_NAME];
-    url_decode(stream_id, decoded_id, sizeof(decoded_id));
-
     // If the router matched '/api/streams/#/full', decoded_id may include the trailing segment
     // (e.g., "Cam01/full"). Trim anything after the first '/'.
-    char *slash = strchr(decoded_id, '/');
+    char *slash = strchr(stream_id, '/');
     if (slash) {
         *slash = '\0';
     }
 
-    log_info("Handling GET /api/streams/%s/full request", decoded_id);
+    log_info("Handling GET /api/streams/%s/full request", stream_id);
 
     // Find the stream by name
-    stream_handle_t stream = get_stream_by_name(decoded_id);
+    stream_handle_t stream = get_stream_by_name(stream_id);
     if (!stream) {
-        log_error("Stream not found: %s", decoded_id);
+        log_error("Stream not found: %s", stream_id);
         http_response_set_json_error(res, 404, "Stream not found");
         return;
     }
@@ -480,7 +472,7 @@ void handle_get_stream_full(const http_request_t *req, http_response_t *res) {
     // Get stream configuration
     stream_config_t config;
     if (get_stream_config(stream, &config) != 0) {
-        log_error("Failed to get stream configuration for: %s", decoded_id);
+        log_error("Failed to get stream configuration for: %s", stream_id);
         http_response_set_json_error(res, 500, "Failed to get stream configuration");
         return;
     }
@@ -589,7 +581,7 @@ void handle_get_stream_full(const http_request_t *req, http_response_t *res) {
 
     // Add motion configuration if available
     motion_recording_config_t mcfg;
-    if (load_motion_config(decoded_id, &mcfg) == 0) {
+    if (load_motion_config(stream_id, &mcfg) == 0) {
         cJSON *motion_obj = cJSON_CreateObject();
         if (motion_obj) {
             cJSON_AddBoolToObject(motion_obj, "enabled", mcfg.enabled);

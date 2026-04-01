@@ -1437,7 +1437,7 @@ void handle_post_system_backup(const http_request_t *req, http_response_t *res) 
     snprintf(backup_filename, sizeof(backup_filename), "lightnvr_backup_%s.json", timestamp);
 
     // Create backup path in the web root directory
-    char backup_path[512];
+    char backup_path[MAX_PATH_LENGTH];
     snprintf(backup_path, sizeof(backup_path), "%s/backups", g_config.web_root);
 
     // Create backups directory if it doesn't exist

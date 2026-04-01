@@ -73,7 +73,7 @@ typedef void (*request_handler_t)(const http_request_t *request, http_response_t
 const char* http_request_get_header(const http_request_t *req, const char *name);
 
 /**
- * @brief Get a query parameter value from the request
+ * @brief Get a URL-decoded query parameter value from the request
  * @param req HTTP request
  * @param name Parameter name
  * @param value Buffer to store the value
@@ -92,7 +92,7 @@ int http_request_get_query_param(const http_request_t *req, const char *name, ch
 int http_request_get_body_str(const http_request_t *req, char *buf, size_t buf_len);
 
 /**
- * @brief Extract a path parameter from the URI (e.g., /api/streams/:id)
+ * @brief Extract a URL-decoded path parameter from the URI (e.g., /api/streams/:id)
  * @param req HTTP request
  * @param prefix URL prefix to strip (e.g., "/api/streams/")
  * @param param_buf Buffer to store the extracted parameter

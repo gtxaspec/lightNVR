@@ -5,8 +5,10 @@
 
 #include "video/go2rtc/go2rtc_snapshot.h"
 #include "video/go2rtc/go2rtc_api.h"
+#include "core/config.h"
 #include "core/logger.h"
 #include "core/curl_init.h"
+#include "core/url_utils.h"
 #include <curl/curl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,12 +126,16 @@ bool go2rtc_get_snapshot(const char *stream_name, unsigned char **jpeg_data, siz
     // Reset the handle for reuse (clears previous request state but keeps connection)
     curl_easy_reset(curl);
 
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME * 3];
+    simple_url_escape(stream_name, encoded_name, MAX_STREAM_NAME * 3);
+
     // Format the URL for the go2rtc snapshot API
     // go2rtc runs on port 1984 and provides snapshots at: /api/frame.jpeg?src={stream_name}
     // We add cache=30s to allow go2rtc to return a cached frame if the stream is temporarily
     // unavailable (e.g., video doorbell in sleep mode). This prevents timeouts when the
     // producer is reconnecting, as long as a frame was captured within the last 30 seconds.
-    snprintf(url, sizeof(url), "http://localhost:1984" GO2RTC_BASE_PATH "/api/frame.jpeg?src=%s&cache=30s", stream_name);
+    snprintf(url, sizeof(url), "http://localhost:1984" GO2RTC_BASE_PATH "/api/frame.jpeg?src=%s&cache=30s", encoded_name);
 
     log_debug("Fetching snapshot from go2rtc: %s", url);
     

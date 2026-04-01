@@ -153,8 +153,11 @@ int http_request_extract_path_param(const http_request_t *req, const char *prefi
 
     if (param_len == 0 || param_len >= buf_size) return -1;
 
-    memcpy(param_buf, param, param_len);
-    param_buf[param_len] = '\0';
+    // Decode param_len bytes into the output buffer. The +1 is needed because
+    // url_decode expects the length to include a null byte, but does not actually
+    // copy that null byte. Limiting url_decode to param_len ensures that the
+    // query string is not decoded or copied into *param.
+    url_decode(param, param_buf, param_len+1);
     return 0;
 }
 

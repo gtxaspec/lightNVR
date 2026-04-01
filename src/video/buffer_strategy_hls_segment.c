@@ -23,13 +23,14 @@
 #include "video/pre_detection_buffer.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 
 // Maximum segments to track
 #define MAX_TRACKED_SEGMENTS 32
 
 // Tracked segment with metadata
 typedef struct {
-    char path[512];                     // Full path to segment
+    char path[MAX_PATH_LENGTH];                     // Full path to segment
     time_t mtime;                       // Modification time
     float duration_seconds;             // Duration (estimated or parsed)
     size_t size_bytes;                  // File size
@@ -40,7 +41,7 @@ typedef struct {
 // Strategy private data
 typedef struct {
     char stream_name[256];
-    char hls_base_path[512];            // Base path for HLS segments
+    char hls_base_path[MAX_PATH_LENGTH];            // Base path for HLS segments
     char segment_pattern[512];          // Glob pattern for segments
     int buffer_seconds;                 // Target buffer duration
     float default_segment_duration;     // Default estimated duration
@@ -153,9 +154,12 @@ static int hls_segment_strategy_init(pre_buffer_strategy_t *self, const buffer_c
     data->buffer_seconds = config->buffer_seconds;
     data->default_segment_duration = 2.0f;  // go2rtc default segment duration
 
+    char safe_name[MAX_STREAM_NAME];
+    sanitize_stream_name(data->stream_name, safe_name, sizeof(safe_name));
+
     // Set up HLS path pattern
     snprintf(data->hls_base_path, sizeof(data->hls_base_path),
-             "%s/hls/%s", g_config.storage_path, data->stream_name);
+             "%s/hls/%s", g_config.storage_path, safe_name);
     snprintf(data->segment_pattern, sizeof(data->segment_pattern),
              "%s/*.ts", data->hls_base_path);
 

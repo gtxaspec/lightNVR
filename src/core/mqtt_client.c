@@ -13,9 +13,12 @@
 
 #include "core/mqtt_client.h"
 #include "core/logger.h"
+#include "core/path_utils.h"
 #include "core/version.h"
 #include "database/db_streams.h"
 #include "video/go2rtc/go2rtc_snapshot.h"
+
+#define MAX_TOPIC_LENGTH 512
 
 // MQTT client state
 static struct mosquitto *mosq = NULL;
@@ -129,7 +132,7 @@ int mqtt_init(const config_t *config) {
 
     // Set up Last Will and Testament for HA availability tracking
     if (config->mqtt_ha_discovery) {
-        char lwt_topic[512];
+        char lwt_topic[MAX_TOPIC_LENGTH];
         snprintf(lwt_topic, sizeof(lwt_topic), "%s/availability", config->mqtt_topic_prefix);
         rc = mosquitto_will_set(mosq, lwt_topic, (int)strlen("offline"), "offline",
                                 config->mqtt_qos, true);
@@ -217,7 +220,7 @@ static void on_connect(struct mosquitto *m, void *userdata, int rc) {
 
         // Publish availability "online" for HA discovery
         if (mqtt_config && mqtt_config->mqtt_ha_discovery) {
-            char avail_topic[512];
+            char avail_topic[MAX_TOPIC_LENGTH];
             snprintf(avail_topic, sizeof(avail_topic), "%s/availability",
                      mqtt_config->mqtt_topic_prefix);
             mqtt_publish_raw(avail_topic, "online", true);
@@ -225,7 +228,7 @@ static void on_connect(struct mosquitto *m, void *userdata, int rc) {
 
             // Subscribe to HA birth topic so we can re-publish discovery
             // when Home Assistant restarts
-            char status_topic[512];
+            char status_topic[MAX_TOPIC_LENGTH];
             snprintf(status_topic, sizeof(status_topic), "%s/status",
                      mqtt_config->mqtt_ha_discovery_prefix);
             int sub_rc = mosquitto_subscribe(m, NULL, status_topic, 0);
@@ -290,7 +293,7 @@ static void on_message(struct mosquitto *m, void *userdata, const struct mosquit
 
     // Check if this is the HA birth message (status topic → "online")
     if (mqtt_config && mqtt_config->mqtt_ha_discovery) {
-        char status_topic[512];
+        char status_topic[MAX_TOPIC_LENGTH];
         snprintf(status_topic, sizeof(status_topic), "%s/status",
                  mqtt_config->mqtt_ha_discovery_prefix);
 
@@ -347,10 +350,13 @@ int mqtt_publish_detection(const char *stream_name, const detection_result_t *re
         return -1;
     }
 
+    char safe_name[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, safe_name, sizeof(safe_name));
+
     // Build topic: {prefix}/detections/{stream_name}
-    char topic[512];
+    char topic[MAX_TOPIC_LENGTH];
     snprintf(topic, sizeof(topic), "%s/detections/%s",
-             mqtt_config->mqtt_topic_prefix, stream_name);
+             mqtt_config->mqtt_topic_prefix, safe_name);
 
     // Build JSON payload
     cJSON *root = cJSON_CreateObject();
@@ -471,25 +477,6 @@ int mqtt_publish_binary(const char *topic, const void *data, size_t len, bool re
 }
 
 /**
- * Sanitize a stream name for use as a Home Assistant unique_id / object_id.
- * Replaces non-alphanumeric characters with underscores and lowercases.
- */
-static void sanitize_stream_name(const char *input, char *output, size_t output_size) {
-    size_t i = 0;
-    for (; i < output_size - 1 && input[i] != '\0'; i++) {
-        char c = input[i];
-        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
-            output[i] = c;
-        } else if (c >= 'A' && c <= 'Z') {
-            output[i] = (char)(c + ('a' - 'A'));
-        } else {
-            output[i] = '_';
-        }
-    }
-    output[i] = '\0';
-}
-
-/**
  * Build the common HA device JSON block for lightNVR.
  * Caller must free the returned cJSON object.
  */
@@ -555,12 +542,12 @@ int mqtt_publish_ha_discovery(void) {
             continue;
         }
 
-        char safe_name[256];
+        char safe_name[MAX_STREAM_NAME];
         sanitize_stream_name(streams[i].name, safe_name, sizeof(safe_name));
 
         // --- 1. Camera entity (snapshot image via MQTT) ---
         {
-            char topic[512];
+            char topic[MAX_TOPIC_LENGTH];
             snprintf(topic, sizeof(topic), "%s/camera/lightnvr/%s/config", prefix, safe_name);
 
             cJSON *payload = cJSON_CreateObject();
@@ -570,11 +557,9 @@ int mqtt_publish_ha_discovery(void) {
             snprintf(unique_id, sizeof(unique_id), "lightnvr_%s_camera", safe_name);
             cJSON_AddStringToObject(payload, "unique_id", unique_id);
 
-            char name[256];
-            snprintf(name, sizeof(name), "%s", streams[i].name);
-            cJSON_AddStringToObject(payload, "name", name);
+            cJSON_AddStringToObject(payload, "name", streams[i].name);
 
-            char image_topic[512];
+            char image_topic[MAX_TOPIC_LENGTH];
             snprintf(image_topic, sizeof(image_topic), "%s/cameras/%s/snapshot",
                      topic_prefix, safe_name);
             cJSON_AddStringToObject(payload, "topic", image_topic);
@@ -584,7 +569,7 @@ int mqtt_publish_ha_discovery(void) {
 
             // Availability
             cJSON *avail = cJSON_CreateObject();
-            char avail_topic[512];
+            char avail_topic[MAX_TOPIC_LENGTH];
             snprintf(avail_topic, sizeof(avail_topic), "%s/availability", topic_prefix);
             cJSON_AddStringToObject(avail, "topic", avail_topic);
             cJSON_AddStringToObject(avail, "payload_available", "online");
@@ -616,7 +601,7 @@ int mqtt_publish_ha_discovery(void) {
 
         // --- 2. Binary sensor for motion detection ---
         {
-            char topic[512];
+            char topic[MAX_TOPIC_LENGTH];
             snprintf(topic, sizeof(topic), "%s/binary_sensor/lightnvr/%s_motion/config",
                      prefix, safe_name);
 
@@ -631,7 +616,7 @@ int mqtt_publish_ha_discovery(void) {
             snprintf(name, sizeof(name), "%s Motion", streams[i].name);
             cJSON_AddStringToObject(payload, "name", name);
 
-            char state_topic[512];
+            char state_topic[MAX_TOPIC_LENGTH];
             snprintf(state_topic, sizeof(state_topic), "%s/cameras/%s/motion",
                      topic_prefix, safe_name);
             cJSON_AddStringToObject(payload, "state_topic", state_topic);
@@ -641,7 +626,7 @@ int mqtt_publish_ha_discovery(void) {
 
             // Availability
             cJSON *avail = cJSON_CreateObject();
-            char avail_topic[512];
+            char avail_topic[MAX_TOPIC_LENGTH];
             snprintf(avail_topic, sizeof(avail_topic), "%s/availability", topic_prefix);
             cJSON_AddStringToObject(avail, "topic", avail_topic);
             cJSON_AddStringToObject(avail, "payload_available", "online");
@@ -673,7 +658,7 @@ int mqtt_publish_ha_discovery(void) {
 
         // --- 3. Sensor for detection count (generic) ---
         {
-            char topic[512];
+            char topic[MAX_TOPIC_LENGTH];
             snprintf(topic, sizeof(topic), "%s/sensor/lightnvr/%s_detection_count/config",
                      prefix, safe_name);
 
@@ -688,7 +673,7 @@ int mqtt_publish_ha_discovery(void) {
             snprintf(name, sizeof(name), "%s Detections", streams[i].name);
             cJSON_AddStringToObject(payload, "name", name);
 
-            char state_topic[512];
+            char state_topic[MAX_TOPIC_LENGTH];
             snprintf(state_topic, sizeof(state_topic), "%s/cameras/%s/detection_count",
                      topic_prefix, safe_name);
             cJSON_AddStringToObject(payload, "state_topic", state_topic);
@@ -696,7 +681,7 @@ int mqtt_publish_ha_discovery(void) {
 
             // Availability
             cJSON *avail = cJSON_CreateObject();
-            char avail_topic[512];
+            char avail_topic[MAX_TOPIC_LENGTH];
             snprintf(avail_topic, sizeof(avail_topic), "%s/availability", topic_prefix);
             cJSON_AddStringToObject(avail, "topic", avail_topic);
             cJSON_AddStringToObject(avail, "payload_available", "online");
@@ -728,7 +713,7 @@ int mqtt_publish_ha_discovery(void) {
 
         // --- Publish initial states so entities don't show "Unknown" ---
         {
-            char topic[512];
+            char topic[MAX_TOPIC_LENGTH];
 
             // Motion: initially OFF
             snprintf(topic, sizeof(topic), "%s/cameras/%s/motion",
@@ -832,7 +817,7 @@ void mqtt_set_motion_state(const char *stream_name, const detection_result_t *re
 
     // Publish motion ON
     if (should_publish_on) {
-        char topic[512];
+        char topic[MAX_TOPIC_LENGTH];
         snprintf(topic, sizeof(topic), "%s/cameras/%s/motion",
                  mqtt_config->mqtt_topic_prefix, safe_name);
         mqtt_publish_raw(topic, "ON", false);
@@ -841,7 +826,7 @@ void mqtt_set_motion_state(const char *stream_name, const detection_result_t *re
 
     // Publish detection count
     {
-        char topic[512];
+        char topic[MAX_TOPIC_LENGTH];
         snprintf(topic, sizeof(topic), "%s/cameras/%s/detection_count",
                  mqtt_config->mqtt_topic_prefix, safe_name);
         char count_str[16];
@@ -851,7 +836,7 @@ void mqtt_set_motion_state(const char *stream_name, const detection_result_t *re
 
     // Publish per-object-class counts
     for (int i = 0; i < num_labels; i++) {
-        char topic[512];
+        char topic[MAX_TOPIC_LENGTH];
         snprintf(topic, sizeof(topic), "%s/cameras/%s/%s",
                  mqtt_config->mqtt_topic_prefix, safe_name, labels_copy[i]);
         char count_str[16];
@@ -889,7 +874,7 @@ static void *ha_snapshot_thread_func(void *arg) {
             if (go2rtc_get_snapshot(streams[i].name, &jpeg_data, &jpeg_size)) {
                 char safe_name[256];
                 sanitize_stream_name(streams[i].name, safe_name, sizeof(safe_name));
-                char topic[512];
+                char topic[MAX_TOPIC_LENGTH];
                 snprintf(topic, sizeof(topic), "%s/cameras/%s/snapshot",
                          mqtt_config->mqtt_topic_prefix, safe_name);
                 mqtt_publish_binary(topic, jpeg_data, jpeg_size, false);
@@ -944,7 +929,7 @@ static void *ha_motion_thread_func(void *arg) {
                 pthread_mutex_unlock(&motion_mutex);
 
                 // Publish motion OFF
-                char topic[512];
+                char topic[MAX_TOPIC_LENGTH];
                 snprintf(topic, sizeof(topic), "%s/cameras/%s/motion",
                          mqtt_config->mqtt_topic_prefix, safe_name);
                 mqtt_publish_raw(topic, "OFF", false);

@@ -14,6 +14,8 @@
 #ifndef LIGHTNVR_PRE_DETECTION_BUFFER_H
 #define LIGHTNVR_PRE_DETECTION_BUFFER_H
 
+#include "core/config.h"
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
@@ -50,7 +52,7 @@ typedef enum {
  * Segment information for HLS-based strategies
  */
 typedef struct {
-    char path[512];                     // Path to segment file
+    char path[MAX_PATH_LENGTH];                     // Path to segment file
     time_t timestamp;                   // Creation timestamp
     float duration;                     // Estimated duration in seconds
     size_t size_bytes;                  // File size

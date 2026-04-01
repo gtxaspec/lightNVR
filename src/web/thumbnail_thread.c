@@ -18,6 +18,7 @@
 #include <errno.h>
 
 #include "web/thumbnail_thread.h"
+#include "core/config.h"
 #define LOG_COMPONENT "Thumbnail"
 #include "core/logger.h"
 #include "utils/memory.h"
@@ -31,8 +32,8 @@
 typedef struct thumbnail_work {
     uint64_t recording_id;
     int index;
-    char input_path[512];
-    char output_path[512];
+    char input_path[MAX_PATH_LENGTH];
+    char output_path[MAX_PATH_LENGTH];
     double seek_seconds;
     deferred_action_handle_t deferred_action;
     deferred_response_callback_t callback;

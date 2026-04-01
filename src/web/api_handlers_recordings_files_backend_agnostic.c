@@ -31,21 +31,13 @@ void handle_check_recording_file(const http_request_t *req, http_response_t *res
     log_info("Handling GET /api/recordings/files/check request");
 
     // Extract path from query parameter
-    char path_param[512];
-    if (http_request_get_query_param(req, "path", path_param, sizeof(path_param)) < 0) {
+    char path[MAX_PATH_LENGTH];
+    if (http_request_get_query_param(req, "path", path, sizeof(path)) < 0) {
         log_error("Missing path parameter");
         http_response_set_json_error(res, 400, "Missing path parameter");
         return;
     }
 
-    // URL decode the path
-    char path[512];
-    if (url_decode(path_param, path, sizeof(path)) != 0) {
-        log_error("Failed to decode path parameter");
-        http_response_set_json_error(res, 400, "Invalid path parameter");
-        return;
-    }
-    
     log_info("Checking file: %s", path);
     
     // Check if file exists
@@ -99,21 +91,13 @@ void handle_delete_recording_file(const http_request_t *req, http_response_t *re
     log_info("Handling DELETE /api/recordings/files request");
 
     // Extract path from query parameter
-    char path_param[512];
-    if (http_request_get_query_param(req, "path", path_param, sizeof(path_param)) < 0) {
+    char path[MAX_PATH_LENGTH];
+    if (http_request_get_query_param(req, "path", path, sizeof(path)) < 0) {
         log_error("Missing path parameter");
         http_response_set_json_error(res, 400, "Missing path parameter");
         return;
     }
 
-    // URL decode the path
-    char path[512];
-    if (url_decode(path_param, path, sizeof(path)) != 0) {
-        log_error("Failed to decode path parameter");
-        http_response_set_json_error(res, 400, "Invalid path parameter");
-        return;
-    }
-    
     log_info("Deleting file: %s", path);
 
     // Attempt unlink directly instead of stat-then-unlink to avoid TOCTOU (#36).

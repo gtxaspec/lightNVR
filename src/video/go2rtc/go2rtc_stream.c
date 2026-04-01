@@ -104,19 +104,11 @@ bool go2rtc_stream_register(const char *stream_id, const char *stream_url,
     }
 
     // Log the input parameters for debugging
-    // URL encode the stream ID to handle spaces and special characters
-    char encoded_stream_id[URL_BUFFER_SIZE];
-    char *encoded = curl_easy_escape(NULL, stream_id, 0);
-    if (encoded) {
-        strncpy(encoded_stream_id, encoded, URL_BUFFER_SIZE - 1);
-        encoded_stream_id[URL_BUFFER_SIZE - 1] = '\0';
-        curl_free(encoded);
-        log_info("URL encoded stream ID: %s -> %s", stream_id, encoded_stream_id);
-    } else {
-        log_warn("Failed to URL encode stream ID, using original: %s", stream_id);
-        strncpy(encoded_stream_id, stream_id, URL_BUFFER_SIZE - 1);
-        encoded_stream_id[URL_BUFFER_SIZE - 1] = '\0';
-    }
+    // Sanitize the stream name so it can be safely used in a URL. Note that URL-encoding
+    // the spaces results in go2rtc complaining with "source with spaces may be insecure",
+    // so we strip any problematic characters from the string.
+    char encoded_stream_id[URL_BUFFER_SIZE * 3];
+    simple_url_escape(stream_id, encoded_stream_id, URL_BUFFER_SIZE * 3);
 
     // Ensure go2rtc is running
     if (!go2rtc_stream_is_ready()) {
@@ -192,7 +184,7 @@ bool go2rtc_stream_register(const char *stream_id, const char *stream_url,
     strncpy(modified_url, new_url, URL_BUFFER_SIZE - 1);
     modified_url[URL_BUFFER_SIZE - 1] = '\0';
 
-    log_info("Prepared go2rtc source URL for stream registration: %s", stream_id);
+    log_info("Prepared go2rtc source URL for stream registration of %s: %s", stream_id, modified_url);
 
     bool result;
 
@@ -220,7 +212,7 @@ bool go2rtc_stream_register(const char *stream_id, const char *stream_url,
         // AAC, and publishes back.  go2rtc will transcode to OPUS for WebRTC
         // on demand without a separate persistent ffmpeg process.
         char ffmpeg_aac_source[URL_BUFFER_SIZE];
-        snprintf(ffmpeg_aac_source, URL_BUFFER_SIZE, "ffmpeg:%s#audio=aac", stream_id);
+        snprintf(ffmpeg_aac_source, URL_BUFFER_SIZE, "ffmpeg:%s#audio=aac", encoded_stream_id);
 
         const char *sources[2] = { modified_url, ffmpeg_aac_source };
         result = go2rtc_api_add_stream_multi(encoded_stream_id, sources, 2);
@@ -347,17 +339,8 @@ bool go2rtc_stream_get_rtsp_url(const char *stream_id, char *buffer, size_t buff
     // special characters produce a valid RTSP URL.  Without encoding, a name
     // like "My Camera" would yield "rtsp://localhost:8554/My Camera" which
     // FFmpeg (and other RTSP clients) reject, resulting in a 404.
-    char encoded_id[URL_BUFFER_SIZE];
-    char *encoded = curl_easy_escape(NULL, stream_id, 0);
-    if (encoded) {
-        strncpy(encoded_id, encoded, URL_BUFFER_SIZE - 1);
-        encoded_id[URL_BUFFER_SIZE - 1] = '\0';
-        curl_free(encoded);
-    } else {
-        log_warn("Failed to URL-encode stream ID '%s', using raw name", stream_id);
-        strncpy(encoded_id, stream_id, URL_BUFFER_SIZE - 1);
-        encoded_id[URL_BUFFER_SIZE - 1] = '\0';
-    }
+    char encoded_id[MAX_STREAM_NAME * 3];
+    simple_url_escape(stream_id, encoded_id, MAX_STREAM_NAME * 3);
 
     // Format the RTSP URL
     snprintf(buffer, buffer_size, "rtsp://localhost:%d/%s", rtsp_port, encoded_id);

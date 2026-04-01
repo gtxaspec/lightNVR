@@ -28,6 +28,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
+#include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
@@ -644,16 +645,20 @@ int start_mp4_recording(const char *stream_name) {
     const struct tm *tm_info = localtime_r(&now, &tm_buf);
     strftime(timestamp_str, sizeof(timestamp_str), "%Y%m%d_%H%M%S", tm_info);
 
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, encoded_name, MAX_STREAM_NAME);
+
     // Create MP4 directory path
     char mp4_dir[MAX_PATH_LENGTH];
     if (global_config->record_mp4_directly && global_config->mp4_storage_path[0] != '\0') {
         // Use configured MP4 storage path if available
         snprintf(mp4_dir, MAX_PATH_LENGTH, "%s/%s",
-                global_config->mp4_storage_path, stream_name);
+                global_config->mp4_storage_path, encoded_name);
     } else {
         // Use mp4 directory parallel to hls, NOT inside it
         snprintf(mp4_dir, MAX_PATH_LENGTH, "%s/mp4/%s",
-                global_config->storage_path, stream_name);
+                global_config->storage_path, encoded_name);
     }
 
     // Create MP4 directory if it doesn't exist
@@ -806,16 +811,20 @@ int start_mp4_recording_with_url(const char *stream_name, const char *url) {
     const struct tm *tm_info = localtime_r(&now, &tm_buf);
     strftime(timestamp_str, sizeof(timestamp_str), "%Y%m%d_%H%M%S", tm_info);
 
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, encoded_name, MAX_STREAM_NAME);
+
     // Create MP4 directory path
     char mp4_dir[MAX_PATH_LENGTH];
     if (global_config->record_mp4_directly && global_config->mp4_storage_path[0] != '\0') {
         // Use configured MP4 storage path if available
         snprintf(mp4_dir, MAX_PATH_LENGTH, "%s/%s",
-                global_config->mp4_storage_path, stream_name);
+                global_config->mp4_storage_path, encoded_name);
     } else {
         // Use mp4 directory parallel to hls, NOT inside it
         snprintf(mp4_dir, MAX_PATH_LENGTH, "%s/mp4/%s",
-                global_config->storage_path, stream_name);
+                global_config->storage_path, encoded_name);
     }
 
     // Create MP4 directory if it doesn't exist
@@ -1035,14 +1044,18 @@ int start_mp4_recording_with_trigger(const char *stream_name, const char *trigge
     const struct tm *tm_info = localtime_r(&now, &tm_buf);
     strftime(timestamp_str, sizeof(timestamp_str), "%Y%m%d_%H%M%S", tm_info);
 
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, encoded_name, MAX_STREAM_NAME);
+
     // Create MP4 directory path
     char mp4_dir[MAX_PATH_LENGTH];
     if (global_config->record_mp4_directly && global_config->mp4_storage_path[0] != '\0') {
         snprintf(mp4_dir, MAX_PATH_LENGTH, "%s/%s",
-                global_config->mp4_storage_path, stream_name);
+                global_config->mp4_storage_path, encoded_name);
     } else {
         snprintf(mp4_dir, MAX_PATH_LENGTH, "%s/mp4/%s",
-                global_config->storage_path, stream_name);
+                global_config->storage_path, encoded_name);
     }
 
     // Create MP4 directory if it doesn't exist
@@ -1181,14 +1194,18 @@ int start_mp4_recording_with_url_and_trigger(const char *stream_name, const char
     const struct tm *tm_info = localtime_r(&now, &tm_buf);
     strftime(timestamp_str, sizeof(timestamp_str), "%Y%m%d_%H%M%S", tm_info);
 
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, encoded_name, MAX_STREAM_NAME);
+
     // Create MP4 directory path
     char mp4_dir[MAX_PATH_LENGTH];
     if (global_config->record_mp4_directly && global_config->mp4_storage_path[0] != '\0') {
         snprintf(mp4_dir, MAX_PATH_LENGTH, "%s/%s",
-                global_config->mp4_storage_path, stream_name);
+                global_config->mp4_storage_path, encoded_name);
     } else {
         snprintf(mp4_dir, MAX_PATH_LENGTH, "%s/mp4/%s",
-                global_config->storage_path, stream_name);
+                global_config->storage_path, encoded_name);
     }
 
     // Create MP4 directory if it doesn't exist

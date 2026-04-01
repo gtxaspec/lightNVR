@@ -73,4 +73,18 @@ int url_build_onvif_device_service_url(const char *url, int onvif_port,
  */
 int url_redact_for_logging(const char *url, char *out_url, size_t out_size);
 
+/**
+ * Format the URL for the API endpoint with query parameters (simple method)
+ *
+ * This is the method that works according to user feedback
+ * URL encode the stream_url to handle special characters
+ * TODO: it's unclear why we wouldn't use curl_easy_escape here
+ *
+ * @param input The input string
+ * @param output The output buffer
+ * @param output_size The size of the output buffer
+ */
+void simple_url_escape(const char *input, char *output, size_t output_size);
+
+
 #endif /* LIGHTNVR_URL_UTILS_H */

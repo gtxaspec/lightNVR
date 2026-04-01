@@ -27,6 +27,7 @@
 #include "video/pre_detection_buffer.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/url_utils.h"
 
 // go2rtc session state
 typedef struct {
@@ -78,9 +79,13 @@ static size_t go2rtc_curl_write_cb(void *contents, size_t size, size_t nmemb, vo
  * Initialize go2rtc HLS session
  */
 static int go2rtc_init_session(go2rtc_strategy_data_t *data) {
-    char url[512];
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME * 3];
+    simple_url_escape(data->stream_name, encoded_name, MAX_STREAM_NAME * 3);
+
+    char url[1024];
     snprintf(url, sizeof(url), "%s/api/stream.m3u8?src=%s", 
-             data->go2rtc_url, data->stream_name);
+             data->go2rtc_url, encoded_name);
     
     CURL *curl = curl_easy_init();
     if (!curl) {

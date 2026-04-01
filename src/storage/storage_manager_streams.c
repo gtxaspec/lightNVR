@@ -37,7 +37,7 @@ int get_stream_storage_usage(const char *storage_path, stream_storage_info_t *st
     }
 
     // Get all stream names from database
-    char stream_names[MAX_STREAMS][64];
+    char stream_names[MAX_STREAMS][MAX_STREAM_NAME];
     int name_count = get_all_stream_names(stream_names, MAX_STREAMS < max_streams ? MAX_STREAMS : max_streams);
 
     if (name_count <= 0) {

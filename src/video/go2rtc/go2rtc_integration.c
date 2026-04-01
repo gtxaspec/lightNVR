@@ -14,6 +14,7 @@
 #include "video/go2rtc/go2rtc_api.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/url_utils.h"
 #include "core/shutdown_coordinator.h"  // For is_shutdown_initiated
 #include "video/stream_manager.h"
 #include "video/mp4_recording.h"
@@ -199,17 +200,9 @@ static bool check_stream_data_flow(const char *stream_name) {
     int api_port_val = go2rtc_stream_get_api_port();
     if (api_port_val == 0) api_port_val = 1984;
 
-    // URL-encode the stream name so that names with spaces work correctly.
-    char encoded_name[512];
-    char *enc = curl_easy_escape(curl, stream_name, 0);
-    if (enc) {
-        strncpy(encoded_name, enc, sizeof(encoded_name) - 1);
-        encoded_name[sizeof(encoded_name) - 1] = '\0';
-        curl_free(enc);
-    } else {
-        strncpy(encoded_name, stream_name, sizeof(encoded_name) - 1);
-        encoded_name[sizeof(encoded_name) - 1] = '\0';
-    }
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME * 3];
+    simple_url_escape(stream_name, encoded_name, MAX_STREAM_NAME * 3);
 
     snprintf(url, sizeof(url), "http://localhost:%d" GO2RTC_BASE_PATH "/api/streams?src=%s", api_port_val, encoded_name);
 
@@ -1630,13 +1623,17 @@ bool go2rtc_integration_get_hls_url(const char *stream_name, char *buffer, size_
         return false;
     }
 
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME * 3];
+    simple_url_escape(stream_name, encoded_name, MAX_STREAM_NAME * 3);
+
     // Format the HLS URL
     // The format is http://localhost:{port}/go2rtc/api/stream.m3u8?src={stream_name}
     int api_port = go2rtc_stream_get_api_port();
     if (api_port == 0) {
         api_port = 1984; // Fallback to default port
     }
-    snprintf(buffer, buffer_size, "http://localhost:%d" GO2RTC_BASE_PATH "/api/stream.m3u8?src=%s", api_port, stream_name);
+    snprintf(buffer, buffer_size, "http://localhost:%d" GO2RTC_BASE_PATH "/api/stream.m3u8?src=%s", api_port, encoded_name);
 
     log_info("Generated go2rtc HLS URL for stream %s: %s", stream_name, buffer);
     return true;

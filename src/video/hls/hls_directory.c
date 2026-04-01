@@ -10,6 +10,7 @@
 
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 #include "video/streams.h"
 #include "video/hls/hls_directory.h"
 #include "video/hls/hls_context.h"
@@ -36,8 +37,12 @@ int ensure_hls_directory(const char *output_dir, const char *stream_name) {
         log_info("Using dedicated HLS storage path: %s", base_storage_path);
     }
 
+    // Make sure we're using a valid path.
+    char stream_path[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
+
     snprintf(safe_output_dir, sizeof(safe_output_dir), "%s/hls/%s",
-            base_storage_path, stream_name);
+            base_storage_path, stream_path);
 
     // Log if we're redirecting from a different path
     if (strcmp(output_dir, safe_output_dir) != 0) {
@@ -214,9 +219,13 @@ int clear_stream_hls_segments(const char *stream_name) {
         log_info("Using dedicated HLS storage path for clearing segments: %s", base_storage_path);
     }
 
+    // Make sure we're using a valid path.
+    char stream_path[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
+
     char stream_hls_dir[MAX_PATH_LENGTH];
     snprintf(stream_hls_dir, MAX_PATH_LENGTH, "%s/hls/%s",
-             base_storage_path, stream_name);
+             base_storage_path, stream_path);
 
     // Check if the directory exists
     struct stat st;

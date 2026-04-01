@@ -122,6 +122,28 @@ void test_extract_path_param(void) {
     TEST_ASSERT_EQUAL_STRING("42", param);
 }
 
+void test_extract_path_param_encoded(void) {
+    http_request_t req;
+    http_request_init(&req);
+    strncpy(req.path, "/api/streams/four%20score%20and%202", sizeof(req.path) - 1);
+
+    char param[32];
+    int rc = http_request_extract_path_param(&req, "/api/streams/", param, sizeof(param));
+    TEST_ASSERT_EQUAL_INT(0, rc);
+    TEST_ASSERT_EQUAL_STRING("four score and 2", param);
+}
+
+void test_extract_path_param_with_query(void) {
+    http_request_t req;
+    http_request_init(&req);
+    strncpy(req.path, "/api/streams/42?test=yes", sizeof(req.path) - 1);
+
+    char param[32];
+    int rc = http_request_extract_path_param(&req, "/api/streams/", param, sizeof(param));
+    TEST_ASSERT_EQUAL_INT(0, rc);
+    TEST_ASSERT_EQUAL_STRING("42", param);
+}
+
 /* ================================================================
  * http_response helpers
  * ================================================================ */
@@ -222,6 +244,8 @@ int main(void) {
     RUN_TEST(test_get_query_param_not_found);
 
     RUN_TEST(test_extract_path_param);
+    RUN_TEST(test_extract_path_param_encoded);
+    RUN_TEST(test_extract_path_param_with_query);
 
     RUN_TEST(test_response_init_and_free);
     RUN_TEST(test_response_set_json);

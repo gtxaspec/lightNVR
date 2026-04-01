@@ -8,6 +8,7 @@
 #include "video/go2rtc/go2rtc_stream.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/url_utils.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -144,11 +145,15 @@ static bool add_go2rtc_recording_consumer(const char *stream_id, const char *out
     snprintf(json_payload, sizeof(json_payload), 
              "{\"src\": \"%s:ffmpeg\", \"dst\": [\"ffmpeg:output=%s/%%Y%%m%%d-%%H%%M%%S.mp4:segment_time=%d:segment_format=mp4\"]}", 
              stream_id, output_path, segment_duration);
-    
+
+    // URL-encode the stream ID
+    char encoded_id[MAX_STREAM_NAME * 3];
+    simple_url_escape(stream_id, encoded_id, MAX_STREAM_NAME * 3);
+
     // Format the URL for the API endpoint
     int api_port = go2rtc_stream_get_api_port();
     if (api_port == 0) api_port = 1984;
-    snprintf(url, sizeof(url), "http://localhost:%d" GO2RTC_BASE_PATH "/api/stream/%s-recording", api_port, stream_id);
+    snprintf(url, sizeof(url), "http://localhost:%d" GO2RTC_BASE_PATH "/api/stream/%s-recording", api_port, encoded_id);
 
     log_info("Adding recording consumer for stream %s with URL: %s", stream_id, url);
     log_info("JSON payload: %s", json_payload);

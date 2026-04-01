@@ -36,7 +36,7 @@
 typedef struct {
     stream_handle_t stream;                    // Stream handle
     stream_config_t config;                    // Updated stream configuration
-    char decoded_id[MAX_STREAM_NAME];          // Decoded stream ID
+    char stream_id[MAX_STREAM_NAME];          // Decoded stream ID
     char original_url[MAX_URL_LENGTH];         // Original URL before update
     stream_protocol_t original_protocol;       // Original protocol before update
     bool original_record_audio;                // Original record_audio before update
@@ -152,12 +152,12 @@ static void put_stream_worker(put_stream_task_t *task) {
         return;
     }
 
-    log_set_thread_context("StreamAPI", task->decoded_id);
-    log_info("Processing PUT /api/streams/%s in worker thread", task->decoded_id);
+    log_set_thread_context("StreamAPI", task->stream_id);
+    log_info("Processing PUT /api/streams/%s in worker thread", task->stream_id);
 
     // Update stream configuration in database first
-    if (update_stream_config(task->decoded_id, &task->config) != 0) {
-        log_error("Failed to update stream configuration in database for %s", task->decoded_id);
+    if (update_stream_config(task->stream_id, &task->config) != 0) {
+        log_error("Failed to update stream configuration in database for %s", task->stream_id);
         put_stream_task_free(task);
         return;
     }
@@ -328,7 +328,7 @@ static void put_stream_worker(put_stream_task_t *task) {
             log_info("Stopping stream %s for restart", task->config.name);
 
             if (stop_stream(task->stream) != 0) {
-                log_error("Failed to stop stream: %s", task->decoded_id);
+                log_error("Failed to stop stream: %s", task->stream_id);
             }
 
             // Wait for stream to stop with increased timeout for critical parameter changes
@@ -366,7 +366,7 @@ static void put_stream_worker(put_stream_task_t *task) {
         if (task->config.enabled) {
             log_info("Starting stream %s after configuration update", task->config.name);
             if (start_stream(task->stream) != 0) {
-                log_error("Failed to restart stream: %s", task->decoded_id);
+                log_error("Failed to restart stream: %s", task->stream_id);
             }
 
             // Force restart the HLS stream thread if streaming is enabled and URL/protocol changed
@@ -383,7 +383,7 @@ static void put_stream_worker(put_stream_task_t *task) {
         log_info("Configuration changed for stream %s but restart not required", task->config.name);
     }
 
-    log_info("Successfully completed stream update for: %s", task->decoded_id);
+    log_info("Successfully completed stream update for: %s", task->stream_id);
 
     // Clean up
     put_stream_task_free(task);
@@ -863,16 +863,12 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
         return;
     }
 
-    // URL-decode the stream identifier
-    char decoded_id[MAX_STREAM_NAME];
-    url_decode(stream_id, decoded_id, sizeof(decoded_id));
-
-    log_info("Handling PUT /api/streams/%s request", decoded_id);
+    log_info("Handling PUT /api/streams/%s request", stream_id);
 
     // Find the stream by name
-    stream_handle_t stream = get_stream_by_name(decoded_id);
+    stream_handle_t stream = get_stream_by_name(stream_id);
     if (!stream) {
-        log_error("Stream not found: %s", decoded_id);
+        log_error("Stream not found: %s", stream_id);
         http_response_set_json_error(res, 404, "Stream not found");
         return;
     }
@@ -880,7 +876,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     // Get current stream configuration
     stream_config_t config;
     if (get_stream_config(stream, &config) != 0) {
-        log_error("Failed to get stream configuration for: %s", decoded_id);
+        log_error("Failed to get stream configuration for: %s", stream_id);
         http_response_set_json_error(res, 500, "Failed to get stream configuration");
         return;
     }
@@ -1384,7 +1380,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     cJSON *enable_request = cJSON_GetObjectItem(stream_json, "enable_disabled");
     if (enable_request && cJSON_IsBool(enable_request) && cJSON_IsTrue(enable_request)) {
         // Request to enable a disabled stream
-        log_info("Enable requested for disabled stream %s", decoded_id);
+        log_info("Enable requested for disabled stream %s", stream_id);
 
         // Check if the stream is currently disabled
         bool currently_disabled = false;
@@ -1393,7 +1389,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
             sqlite3_stmt *stmt;
             const char *sql = "SELECT enabled FROM streams WHERE name = ?;";
             if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
-                sqlite3_bind_text(stmt, 1, decoded_id, -1, SQLITE_STATIC);
+                sqlite3_bind_text(stmt, 1, stream_id, -1, SQLITE_STATIC);
                 if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
                     currently_disabled = sqlite3_column_int(stmt, 0) == 0;
                 }
@@ -1408,20 +1404,20 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
                 sqlite3_stmt *stmt;
                 const char *sql = "UPDATE streams SET enabled = 1 WHERE name = ?;";
                 if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
-                    sqlite3_bind_text(stmt, 1, decoded_id, -1, SQLITE_STATIC);
+                    sqlite3_bind_text(stmt, 1, stream_id, -1, SQLITE_STATIC);
                     if (sqlite3_step(stmt) != SQLITE_DONE) {
-                        log_error("Failed to enable stream %s: %s", decoded_id, sqlite3_errmsg(db));
+                        log_error("Failed to enable stream %s: %s", stream_id, sqlite3_errmsg(db));
                     } else {
-                        log_info("Successfully enabled stream %s", decoded_id);
+                        log_info("Successfully enabled stream %s", stream_id);
 
                         // Get the stream configuration to register with go2rtc
                         stream_config_t stream_config;
-                        if (get_stream_config_by_name(decoded_id, &stream_config) == 0) {
+                        if (get_stream_config_by_name(stream_id, &stream_config) == 0) {
                             // Use centralized function to register the stream with go2rtc
-                            if (go2rtc_integration_reload_stream(decoded_id)) {
-                                log_info("Successfully registered stream %s with go2rtc", decoded_id);
+                            if (go2rtc_integration_reload_stream(stream_id)) {
+                                log_info("Successfully registered stream %s with go2rtc", stream_id);
                             } else {
-                                log_warn("Failed to register stream %s with go2rtc (go2rtc may not be ready)", decoded_id);
+                                log_warn("Failed to register stream %s with go2rtc (go2rtc may not be ready)", stream_id);
                             }
 
                             // If detection is enabled for this stream, start the unified detection thread
@@ -1429,22 +1425,22 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
                                 // If continuous recording is also enabled, run detection in annotation-only mode
                                 bool annotation_only = stream_config.record;
                                 log_info("Starting unified detection thread for enabled stream %s (annotation_only=%s)",
-                                         decoded_id, annotation_only ? "true" : "false");
+                                         stream_id, annotation_only ? "true" : "false");
 
                                 // Start unified detection thread
-                                if (start_unified_detection_thread(decoded_id,
+                                if (start_unified_detection_thread(stream_id,
                                                                   stream_config.detection_model,
                                                                   stream_config.detection_threshold,
                                                                   stream_config.pre_detection_buffer,
                                                                   stream_config.post_detection_buffer,
                                                                   annotation_only) != 0) {
-                                    log_warn("Failed to start unified detection thread for stream %s", decoded_id);
+                                    log_warn("Failed to start unified detection thread for stream %s", stream_id);
                                 } else {
-                                    log_info("Successfully started unified detection thread for stream %s", decoded_id);
+                                    log_info("Successfully started unified detection thread for stream %s", stream_id);
                                 }
                             }
                         } else {
-                            log_error("Failed to get configuration for stream %s", decoded_id);
+                            log_error("Failed to get configuration for stream %s", stream_id);
                         }
                     }
                     sqlite3_finalize(stmt);
@@ -1457,7 +1453,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     cJSON *privacy_request = cJSON_GetObjectItem(stream_json, "set_privacy_mode");
     if (privacy_request && cJSON_IsBool(privacy_request)) {
         bool enable_privacy = cJSON_IsTrue(privacy_request);
-        log_info("Privacy mode %s requested for stream %s", enable_privacy ? "enable" : "disable", decoded_id);
+        log_info("Privacy mode %s requested for stream %s", enable_privacy ? "enable" : "disable", stream_id);
 
         sqlite3 *db = get_db_handle();
         if (db) {
@@ -1465,22 +1461,22 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
             const char *sql = "UPDATE streams SET privacy_mode = ? WHERE name = ?;";
             if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
                 sqlite3_bind_int(stmt, 1, enable_privacy ? 1 : 0);
-                sqlite3_bind_text(stmt, 2, decoded_id, -1, SQLITE_STATIC);
+                sqlite3_bind_text(stmt, 2, stream_id, -1, SQLITE_STATIC);
                 if (sqlite3_step(stmt) != SQLITE_DONE) {
-                    log_error("Failed to set privacy mode for stream %s: %s", decoded_id, sqlite3_errmsg(db));
+                    log_error("Failed to set privacy mode for stream %s: %s", stream_id, sqlite3_errmsg(db));
                 } else {
-                    log_info("Successfully set privacy_mode=%d for stream %s", enable_privacy ? 1 : 0, decoded_id);
+                    log_info("Successfully set privacy_mode=%d for stream %s", enable_privacy ? 1 : 0, stream_id);
                     // If enabling privacy, stop stream processing; if disabling, restart it
                     if (enable_privacy) {
                         // Unregister from go2rtc so clients cannot connect
-                        go2rtc_integration_unregister_stream(decoded_id);
-                        log_info("Unregistered stream %s from go2rtc due to privacy mode", decoded_id);
+                        go2rtc_integration_unregister_stream(stream_id);
+                        log_info("Unregistered stream %s from go2rtc due to privacy mode", stream_id);
                     } else {
                         // Resume: re-register with go2rtc
-                        if (go2rtc_integration_reload_stream(decoded_id)) {
-                            log_info("Re-registered stream %s with go2rtc after privacy mode cleared", decoded_id);
+                        if (go2rtc_integration_reload_stream(stream_id)) {
+                            log_info("Re-registered stream %s with go2rtc after privacy mode cleared", stream_id);
                         } else {
-                            log_warn("Failed to re-register stream %s with go2rtc", decoded_id);
+                            log_warn("Failed to re-register stream %s with go2rtc", stream_id);
                         }
                     }
                 }
@@ -1523,7 +1519,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     // Populate task with all necessary data
     task->stream = stream;
     memcpy(&task->config, &config, sizeof(stream_config_t));
-    strncpy(task->decoded_id, decoded_id, MAX_STREAM_NAME - 1);
+    strncpy(task->stream_id, stream_id, MAX_STREAM_NAME - 1);
     strncpy(task->original_url, original_url, MAX_URL_LENGTH - 1);
     task->original_protocol = original_protocol;
     task->original_record_audio = original_record_audio;
@@ -1596,7 +1592,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
         put_stream_task_free(task);
         // Response already sent, just log the error
     } else {
-        log_info("PUT stream task started in worker thread for: %s", decoded_id);
+        log_info("PUT stream task started in worker thread for: %s", stream_id);
     }
 
     pthread_attr_destroy(&attr);
@@ -1607,7 +1603,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
  */
 typedef struct {
     stream_handle_t stream;                    // Stream handle
-    char decoded_id[MAX_STREAM_NAME];          // Decoded stream ID
+    char stream_id[MAX_STREAM_NAME];          // Decoded stream ID
     bool permanent_delete;                     // Whether to permanently delete
 } delete_stream_task_t;
 
@@ -1624,14 +1620,14 @@ static void delete_stream_worker(delete_stream_task_t *task) {
         return;
     }
 
-    log_set_thread_context("StreamAPI", task->decoded_id);
-    log_info("Processing DELETE /api/streams/%s in worker thread", task->decoded_id);
+    log_set_thread_context("StreamAPI", task->stream_id);
+    log_info("Processing DELETE /api/streams/%s in worker thread", task->stream_id);
 
     // Stop stream if it's running
     stream_status_t status = get_stream_status(task->stream);
     if (status == STREAM_STATUS_RUNNING || status == STREAM_STATUS_STARTING) {
         if (stop_stream(task->stream) != 0) {
-            log_error("Failed to stop stream: %s", task->decoded_id);
+            log_error("Failed to stop stream: %s", task->stream_id);
             // Continue anyway
         }
 
@@ -1644,41 +1640,41 @@ static void delete_stream_worker(delete_stream_task_t *task) {
     }
 
     // Stop any unified detection thread for this stream
-    if (is_unified_detection_running(task->decoded_id)) {
-        log_info("Stopping unified detection thread for stream %s", task->decoded_id);
-        if (stop_unified_detection_thread(task->decoded_id) != 0) {
-            log_warn("Failed to stop unified detection thread for stream %s", task->decoded_id);
+    if (is_unified_detection_running(task->stream_id)) {
+        log_info("Stopping unified detection thread for stream %s", task->stream_id);
+        if (stop_unified_detection_thread(task->stream_id) != 0) {
+            log_warn("Failed to stop unified detection thread for stream %s", task->stream_id);
             // Continue anyway
         } else {
-            log_info("Successfully stopped unified detection thread for stream %s", task->decoded_id);
+            log_info("Successfully stopped unified detection thread for stream %s", task->stream_id);
         }
     }
 
     // Delete stream from memory
     if (remove_stream(task->stream) != 0) {
-        log_error("Failed to delete stream from memory: %s", task->decoded_id);
+        log_error("Failed to delete stream from memory: %s", task->stream_id);
         free(task);
         return;
     }
 
     // Delete the stream from the database (permanently or just disable)
-    if (delete_stream_config_internal(task->decoded_id, task->permanent_delete) != 0) {
+    if (delete_stream_config_internal(task->stream_id, task->permanent_delete) != 0) {
         log_error("Failed to %s stream configuration in database for %s",
                 task->permanent_delete ? "permanently delete" : "disable",
-                task->decoded_id);
+                task->stream_id);
         free(task);
         return;
     }
 
     // Unregister stream from go2rtc
-    if (!go2rtc_integration_unregister_stream(task->decoded_id)) {
-        log_warn("Failed to unregister stream %s from go2rtc", task->decoded_id);
+    if (!go2rtc_integration_unregister_stream(task->stream_id)) {
+        log_warn("Failed to unregister stream %s from go2rtc", task->stream_id);
         // Continue anyway - stream is deleted from database
     }
 
     log_info("Successfully %s stream in worker thread: %s",
             task->permanent_delete ? "permanently deleted" : "disabled",
-            task->decoded_id);
+            task->stream_id);
 
     free(task);
 }
@@ -1699,11 +1695,7 @@ void handle_delete_stream(const http_request_t *req, http_response_t *res) {
         return;
     }
 
-    // URL-decode the stream identifier
-    char decoded_id[MAX_STREAM_NAME];
-    url_decode(stream_id, decoded_id, sizeof(decoded_id));
-
-    log_info("Handling DELETE /api/streams/%s request", decoded_id);
+    log_info("Handling DELETE /api/streams/%s request", stream_id);
 
     // Check if permanent delete is requested
     bool permanent_delete = false;
@@ -1711,14 +1703,14 @@ void handle_delete_stream(const http_request_t *req, http_response_t *res) {
     if (http_request_get_query_param(req, "permanent", permanent_param, sizeof(permanent_param)) > 0) {
         if (strcmp(permanent_param, "true") == 0) {
             permanent_delete = true;
-            log_info("Permanent delete requested for stream: %s", decoded_id);
+            log_info("Permanent delete requested for stream: %s", stream_id);
         }
     }
 
     // Find the stream by name
-    stream_handle_t stream = get_stream_by_name(decoded_id);
+    stream_handle_t stream = get_stream_by_name(stream_id);
     if (!stream) {
-        log_error("Stream not found: %s", decoded_id);
+        log_error("Stream not found: %s", stream_id);
         http_response_set_json_error(res, 404, "Stream not found");
         return;
     }
@@ -1732,7 +1724,7 @@ void handle_delete_stream(const http_request_t *req, http_response_t *res) {
     }
 
     task->stream = stream;
-    strncpy(task->decoded_id, decoded_id, sizeof(task->decoded_id) - 1);
+    strncpy(task->stream_id, stream_id, sizeof(task->stream_id) - 1);
     task->permanent_delete = permanent_delete;
 
     // Send 202 Accepted response immediately so we don't block the event loop
@@ -1773,7 +1765,7 @@ void handle_delete_stream(const http_request_t *req, http_response_t *res) {
         free(task);
         // Response already sent, just log the error
     } else {
-        log_info("DELETE stream task started in worker thread for: %s", decoded_id);
+        log_info("DELETE stream task started in worker thread for: %s", stream_id);
     }
 
     pthread_attr_destroy(&attr);
@@ -1888,16 +1880,12 @@ void handle_post_stream_refresh(const http_request_t *req, http_response_t *res)
         *suffix = '\0';
     }
 
-    // URL decode the stream name
-    char decoded_name[MAX_STREAM_NAME] = {0};
-    url_decode(stream_name, decoded_name, sizeof(decoded_name));
-
-    log_info("Refreshing go2rtc registration for stream: %s", decoded_name);
+    log_info("Refreshing go2rtc registration for stream: %s", stream_name);
 
     // Check if the stream exists
-    stream_handle_t stream = get_stream_by_name(decoded_name);
+    stream_handle_t stream = get_stream_by_name(stream_name);
     if (!stream) {
-        log_error("Stream not found: %s", decoded_name);
+        log_error("Stream not found: %s", stream_name);
         http_response_set_json_error(res, 404, "Stream not found");
         return;
     }
@@ -1909,7 +1897,7 @@ void handle_post_stream_refresh(const http_request_t *req, http_response_t *res)
         http_response_set_json_error(res, 500, "Internal server error");
         return;
     }
-    strncpy(task->stream_name, decoded_name, MAX_STREAM_NAME - 1);
+    strncpy(task->stream_name, stream_name, MAX_STREAM_NAME - 1);
 
     // Send immediate 202 Accepted response
     cJSON *response = cJSON_CreateObject();
@@ -1922,7 +1910,7 @@ void handle_post_stream_refresh(const http_request_t *req, http_response_t *res)
 
     cJSON_AddBoolToObject(response, "success", true);
     cJSON_AddStringToObject(response, "message", "Stream refresh request accepted and processing");
-    cJSON_AddStringToObject(response, "stream", decoded_name);
+    cJSON_AddStringToObject(response, "stream", stream_name);
 
     char *json_str = cJSON_PrintUnformatted(response);
     cJSON_Delete(response);
@@ -1949,7 +1937,7 @@ void handle_post_stream_refresh(const http_request_t *req, http_response_t *res)
         free(task);
         // Response already sent, just log the error
     } else {
-        log_info("Stream refresh task started in worker thread for: %s", decoded_name);
+        log_info("Stream refresh task started in worker thread for: %s", stream_name);
     }
 
     pthread_attr_destroy(&attr);

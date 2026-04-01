@@ -276,7 +276,7 @@ void handle_get_motion_recordings(const http_request_t *req, http_response_t *re
     log_info("GET /api/motion/recordings/%s", stream_name);
 
     // Get list of recordings
-    char paths[100][512];
+    char paths[100][MAX_PATH_LENGTH];
     time_t timestamps[100];
     uint64_t sizes[100];
 
@@ -326,7 +326,7 @@ void handle_get_motion_recordings(const http_request_t *req, http_response_t *re
  * Handler for DELETE /api/motion/recordings/:id
  */
 void handle_delete_motion_recording(const http_request_t *req, http_response_t *res) {
-    char file_path[512];
+    char file_path[MAX_PATH_LENGTH];
 
     // Extract file path from URL parameter
     if (http_request_extract_path_param(req, "/api/motion/recordings/", file_path, sizeof(file_path)) != 0) {
@@ -334,7 +334,7 @@ void handle_delete_motion_recording(const http_request_t *req, http_response_t *
         return;
     }
 
-    log_info("DELETE /api/motion/recordings (path: %s)", file_path);
+    log_info("DELETE /api/motion/recordings/%s", file_path);
 
     // Delete the recording
     if (delete_motion_recording(file_path) != 0) {
@@ -470,21 +470,17 @@ void handle_test_motion_event(const http_request_t *req, http_response_t *res) {
         return;
     }
 
-    // URL-decode in case the name contains special characters
-    char decoded_name[256] = {0};
-    url_decode(stream_name, decoded_name, sizeof(decoded_name));
-
-    log_info("POST /api/motion/test/%s", decoded_name);
+    log_info("POST /api/motion/test/%s", stream_name);
 
     // Check if motion recording is enabled for this stream
-    if (!is_motion_recording_enabled(decoded_name)) {
+    if (!is_motion_recording_enabled(stream_name)) {
         http_response_set_json_error(res, 400, "Motion recording not enabled for this stream");
         return;
     }
 
     // Trigger a motion event
     time_t now = time(NULL);
-    int rc = process_motion_event(decoded_name, true, now);
+    int rc = process_motion_event(stream_name, true, now);
 
     // Build response
     cJSON *response = cJSON_CreateObject();
@@ -492,7 +488,7 @@ void handle_test_motion_event(const http_request_t *req, http_response_t *res) {
         http_response_set_json_error(res, 500, "Failed to create JSON response");
         return;
     }
-    cJSON_AddStringToObject(response, "stream_name", decoded_name);
+    cJSON_AddStringToObject(response, "stream_name", stream_name);
     cJSON_AddBoolToObject(response, "success", rc == 0);
     cJSON_AddStringToObject(response, "message", rc == 0 ? "Test motion event triggered" : "Failed to trigger test motion event");
 

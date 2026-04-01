@@ -20,14 +20,12 @@
 #include "core/config.h"
 #include "core/logger.h"
 #include "core/mqtt_client.h"
+#include "core/path_utils.h"
 
 // Maximum number of streams to process at once
 #define MAX_STREAMS_BATCH 64
 // Maximum recordings to delete per stream per run
 #define MAX_RECORDINGS_PER_STREAM 100
-
-// Maximum length for stream names (including null terminator)
-#define MAX_STREAM_NAME_LENGTH 64
 
 // Maximum orphaned recordings to process per run
 #define MAX_ORPHANED_BATCH 100
@@ -315,7 +313,7 @@ int apply_retention_policy(void) {
     uint64_t total_freed = 0;
 
     // Get list of all stream names
-    char stream_names[MAX_STREAMS_BATCH][MAX_STREAM_NAME_LENGTH];
+    char stream_names[MAX_STREAMS_BATCH][MAX_STREAM_NAME];
     int stream_count = get_all_stream_names(stream_names, MAX_STREAMS_BATCH);
 
     if (stream_count < 0) {
@@ -416,7 +414,7 @@ int apply_retention_policy(void) {
     // and we'd incorrectly wipe the entire database.
     bool storage_accessible = false;
     {
-        char mp4_path[512];
+        char mp4_path[MAX_PATH_LENGTH];
         snprintf(mp4_path, sizeof(mp4_path), "%s/%s", storage_manager.storage_path, MP4_SUBDIR);
         struct stat st;
         if (stat(storage_manager.storage_path, &st) == 0 && S_ISDIR(st.st_mode) &&
@@ -589,8 +587,12 @@ int create_stream_directory(const char *stream_name) {
         return -1;
     }
 
-    char dir_path[512];
-    snprintf(dir_path, sizeof(dir_path), "%s/%s", storage_manager.storage_path, stream_name);
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, encoded_name, MAX_STREAM_NAME);
+
+    char dir_path[MAX_PATH_LENGTH];
+    snprintf(dir_path, sizeof(dir_path), "%s/%s", storage_manager.storage_path, encoded_name);
 
     struct stat st;
     if (stat(dir_path, &st) != 0) {
@@ -829,7 +831,7 @@ static void standard_cleanup_cycle(void) {
     recording_metadata_t *tier_recs = calloc(MAX_RECORDINGS_PER_STREAM, sizeof(recording_metadata_t));
     if (tier_recs) {
         // Get all stream names
-        char stream_names[MAX_STREAMS_BATCH][MAX_STREAM_NAME_LENGTH];
+        char stream_names[MAX_STREAMS_BATCH][MAX_STREAM_NAME];
         int stream_count = get_all_stream_names(stream_names, MAX_STREAMS_BATCH);
 
         for (int s = 0; s < stream_count && unified_ctrl.running; s++) {

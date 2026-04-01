@@ -1488,11 +1488,11 @@ int set_stream_retention_config(const char *stream_name, const stream_retention_
 /**
  * Get all stream names for retention policy processing
  *
- * @param names Array of stream name buffers (each should be at least 64 chars)
+ * @param names Array of stream name buffers (each should be MAX_STREAM_NAME chars)
  * @param max_count Maximum number of stream names to return
  * @return Number of streams found, or -1 on error
  */
-int get_all_stream_names(char names[][64], int max_count) {
+int get_all_stream_names(char names[][MAX_STREAM_NAME], int max_count) {
     int rc;
     sqlite3_stmt *stmt;
     int count = 0;
@@ -1524,8 +1524,8 @@ int get_all_stream_names(char names[][64], int max_count) {
     while (sqlite3_step(stmt) == SQLITE_ROW && count < max_count) {
         const char *name = (const char *)sqlite3_column_text(stmt, 0);
         if (name) {
-            strncpy(names[count], name, 63);
-            names[count][63] = '\0';
+            strncpy(names[count], name, MAX_STREAM_NAME-1);
+            names[count][MAX_STREAM_NAME-1] = '\0';
             count++;
         }
     }

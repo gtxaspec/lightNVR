@@ -75,7 +75,7 @@ typedef struct {
     time_t newest_packet_time;  // Timestamp of newest packet in buffer
 
     // Disk-based buffer (if mode is DISK or HYBRID)
-    char disk_buffer_path[512]; // Path to disk buffer directory
+    char disk_buffer_path[MAX_PATH_LENGTH]; // Path to disk buffer directory
     FILE *disk_buffer_file;     // File handle for disk buffer
 
     // Thread safety

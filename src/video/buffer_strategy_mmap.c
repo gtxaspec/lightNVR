@@ -34,6 +34,7 @@
 #include "video/pre_detection_buffer.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 
 // Packet entry in mmap buffer (fixed size for simplicity)
 typedef struct {
@@ -69,7 +70,7 @@ typedef struct {
 // Strategy private data
 typedef struct {
     char stream_name[256];
-    char file_path[512];                // Path to mmap file
+    char file_path[MAX_PATH_LENGTH];                // Path to mmap file
     int fd;                             // File descriptor
     uint8_t *mapped_data;               // Mmap pointer
     size_t mapped_size;                 // Total mapped size
@@ -161,14 +162,17 @@ static int mmap_strategy_init(pre_buffer_strategy_t *self, const buffer_config_t
         data->max_entries = (int)((total_size - sizeof(mmap_buffer_header_t)) / data->entry_size);
     }
 
+    char safe_name[MAX_STREAM_NAME];
+    sanitize_stream_name(data->stream_name, safe_name, sizeof(safe_name));
+
     // Set up file path
     snprintf(data->file_path, sizeof(data->file_path),
              "%s/buffer/%s_prebuffer.mmap",
              config->storage_path ? config->storage_path : g_config.storage_path,
-             data->stream_name);
+             safe_name);
 
     // Ensure directory exists
-    char dir_path[512];
+    char dir_path[MAX_PATH_LENGTH];
     snprintf(dir_path, sizeof(dir_path), "%s/buffer",
              config->storage_path ? config->storage_path : g_config.storage_path);
     mkdir(dir_path, 0755);

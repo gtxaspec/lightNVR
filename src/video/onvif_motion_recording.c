@@ -18,6 +18,7 @@
 #include "video/stream_manager.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
 #include "database/database_manager.h"
 #include "database/db_recordings.h"
@@ -221,6 +222,10 @@ static int generate_recording_path(const char *stream_name, char *path, size_t p
         return -1;
     }
 
+    // Make sure we're using a valid path.
+    char stream_path[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
+
     // Get storage path from config
     extern config_t* get_streaming_config(void);
     const config_t *config = get_streaming_config();
@@ -244,23 +249,23 @@ static int generate_recording_path(const char *stream_name, char *path, size_t p
     
     char dir_path[MAX_PATH_LENGTH];
     snprintf(dir_path, sizeof(dir_path), "%s/%s/%s/%s/%s",
-             config->storage_path, stream_name, year, month, day);
+             config->storage_path, stream_path, year, month, day);
     
     // Create directories if they don't exist
     char temp_path[MAX_PATH_LENGTH];
-    snprintf(temp_path, sizeof(temp_path), "%s/%s", config->storage_path, stream_name);
+    snprintf(temp_path, sizeof(temp_path), "%s/%s", config->storage_path, stream_path);
     mkdir(temp_path, 0755);
     
-    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s", config->storage_path, stream_name, year);
+    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s", config->storage_path, stream_path, year);
     mkdir(temp_path, 0755);
     
-    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s/%s", config->storage_path, stream_name, year, month);
+    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s/%s", config->storage_path, stream_path, year, month);
     mkdir(temp_path, 0755);
     
     mkdir(dir_path, 0755);
     
     // Generate full file path
-    snprintf(path, path_size, "%s/%s_%s_motion.mp4", dir_path, stream_name, timestamp);
+    snprintf(path, path_size, "%s/%s_%s_motion.mp4", dir_path, stream_path, timestamp);
     
     log_info("Generated recording path: %s", path);
     return 0;

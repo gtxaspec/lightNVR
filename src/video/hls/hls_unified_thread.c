@@ -43,6 +43,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
+#include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
 
 // MEMORY LEAK FIX: Forward declaration for FFmpeg buffer cleanup function
@@ -2432,9 +2433,13 @@ int start_hls_unified_stream(const char *stream_name) {
         log_info("Using default storage path for HLS: %s", base_storage_path);
     }
 
+    // Make sure we're using a valid path.
+    char stream_path[MAX_STREAM_NAME];
+    sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
+
     // Create HLS output path
     snprintf(ctx->output_path, MAX_PATH_LENGTH, "%s/hls/%s",
-             base_storage_path, stream_name);
+             base_storage_path, stream_path);
 
     // Create HLS directory if it doesn't exist using direct C functions to handle paths with spaces
     struct stat st;
@@ -2584,9 +2589,13 @@ int restart_hls_unified_stream(const char *stream_name) {
             log_info("Using dedicated HLS storage path for restart: %s", base_storage_path);
         }
 
+        // Make sure we're using a valid path.
+        char stream_path[MAX_STREAM_NAME];
+        sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
+
         char hls_dir[MAX_PATH_LENGTH];
         snprintf(hls_dir, MAX_PATH_LENGTH, "%s/hls/%s",
-                base_storage_path, stream_name);
+                base_storage_path, stream_path);
 
         // Ensure the directory exists and has proper permissions
         log_info("Ensuring HLS directory exists and is writable: %s", hls_dir);

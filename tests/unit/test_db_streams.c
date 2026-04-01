@@ -209,7 +209,7 @@ void test_get_all_stream_names(void) {
     add_stream_config(&s1);
     add_stream_config(&s2);
 
-    char names[10][64];
+    char names[10][MAX_STREAM_NAME];
     int n = get_all_stream_names(names, 10);
     TEST_ASSERT_EQUAL_INT(2, n);
 }

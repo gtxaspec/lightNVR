@@ -35,6 +35,7 @@
 
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
 #include "video/unified_detection_thread.h"
 #include "video/packet_buffer.h"
@@ -497,8 +498,12 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
 
     // Set output directory
     if (global_cfg) {
+        // Make sure we're using a valid path.
+        char stream_path[MAX_STREAM_NAME];
+        sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
+
         snprintf(ctx->output_dir, sizeof(ctx->output_dir), "%s/%s",
-                 global_cfg->storage_path, stream_name);
+                 global_cfg->storage_path, stream_path);
         mkdir(ctx->output_dir, 0755);
     }
 

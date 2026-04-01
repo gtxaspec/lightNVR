@@ -25,6 +25,7 @@
 #define LOG_COMPONENT "RecordingsAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/url_utils.h"
 #include "database/database_manager.h"
 #include "database/db_core.h"
 #include "database/db_recordings.h"
@@ -629,12 +630,16 @@ int create_timeline_manifest(const timeline_segment_t *segments, int segment_cou
     // Round up to the nearest integer and add a small buffer
     int target_duration = (int)max_duration + 1;
     fprintf(manifest, "#EXT-X-TARGETDURATION:%d\n", target_duration);
+
+    // Sanitize the stream name so that names with spaces work correctly.
+    char encoded_name[MAX_STREAM_NAME * 3];
+    simple_url_escape(segments[0].stream_name, encoded_name, MAX_STREAM_NAME * 3);
     
     // Create a single segment for the entire timeline
     // This simplifies playback and avoids issues with segment transitions
     fprintf(manifest, "#EXTINF:%.6f,\n", max_duration);
     fprintf(manifest, "/api/timeline/play?stream=%s&start=%ld\n", 
-            segments[0].stream_name, (long)start_time);
+            encoded_name, (long)start_time);
     
     // Write manifest end
     fprintf(manifest, "#EXT-X-ENDLIST\n");

@@ -179,47 +179,40 @@ void handle_get_recordings(const http_request_t *req, http_response_t *res) {
 
     if (start_time_str[0] != '\0') {
         // URL-decode the time string (replace %3A with :)
-        char decoded_start_time[64] = {0};
-        url_decode(start_time_str, decoded_start_time, sizeof(decoded_start_time));
-
-        log_debug("Parsing start time string (decoded): %s", decoded_start_time);
+        log_debug("Parsing start time string (decoded): %s", start_time_str);
 
         struct tm tm = {0};
         // Try different time formats
-        if (strptime(decoded_start_time, "%Y-%m-%dT%H:%M:%S", &tm) != NULL ||
-            strptime(decoded_start_time, "%Y-%m-%dT%H:%M:%S.000Z", &tm) != NULL ||
-            strptime(decoded_start_time, "%Y-%m-%dT%H:%M:%S.000", &tm) != NULL ||
-            strptime(decoded_start_time, "%Y-%m-%dT%H:%M:%SZ", &tm) != NULL) {
+        if (strptime(start_time_str, "%Y-%m-%dT%H:%M:%S", &tm) != NULL ||
+            strptime(start_time_str, "%Y-%m-%dT%H:%M:%S.000Z", &tm) != NULL ||
+            strptime(start_time_str, "%Y-%m-%dT%H:%M:%S.000", &tm) != NULL ||
+            strptime(start_time_str, "%Y-%m-%dT%H:%M:%SZ", &tm) != NULL) {
 
             // Convert to UTC timestamp - assume input is already in UTC
             tm.tm_isdst = 0; // No DST for UTC
             start_time = timegm(&tm);
             log_debug("Parsed start time: %ld", (long)start_time);
         } else {
-            log_error("Failed to parse start time string: %s", decoded_start_time);
+            log_error("Failed to parse start time string: %s", start_time_str);
         }
     }
 
     if (end_time_str[0] != '\0') {
-        // URL-decode the time string (replace %3A with :)
-        char decoded_end_time[64] = {0};
-        url_decode(end_time_str, decoded_end_time, sizeof(decoded_end_time));
-
-        log_debug("Parsing end time string (decoded): %s", decoded_end_time);
+        log_debug("Parsing end time string (decoded): %s", end_time_str);
 
         struct tm tm = {0};
         // Try different time formats
-        if (strptime(decoded_end_time, "%Y-%m-%dT%H:%M:%S", &tm) != NULL ||
-            strptime(decoded_end_time, "%Y-%m-%dT%H:%M:%S.000Z", &tm) != NULL ||
-            strptime(decoded_end_time, "%Y-%m-%dT%H:%M:%S.000", &tm) != NULL ||
-            strptime(decoded_end_time, "%Y-%m-%dT%H:%M:%SZ", &tm) != NULL) {
+        if (strptime(end_time_str, "%Y-%m-%dT%H:%M:%S", &tm) != NULL ||
+            strptime(end_time_str, "%Y-%m-%dT%H:%M:%S.000Z", &tm) != NULL ||
+            strptime(end_time_str, "%Y-%m-%dT%H:%M:%S.000", &tm) != NULL ||
+            strptime(end_time_str, "%Y-%m-%dT%H:%M:%SZ", &tm) != NULL) {
 
             // Convert to UTC timestamp - assume input is already in UTC
             tm.tm_isdst = 0; // No DST for UTC
             end_time = timegm(&tm);
             log_debug("Parsed end time: %ld", (long)end_time);
         } else {
-            log_error("Failed to parse end time string: %s", decoded_end_time);
+            log_error("Failed to parse end time string: %s", end_time_str);
         }
     }
 

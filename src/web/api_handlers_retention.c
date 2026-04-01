@@ -27,7 +27,7 @@ void handle_get_stream_retention(const http_request_t *req, http_response_t *res
     log_info("Handling GET /api/streams/:name/retention request");
 
     // Extract stream name from URL
-    char stream_name[64] = {0};
+    char stream_name[MAX_STREAM_NAME] = {0};
     if (http_request_extract_path_param(req, "/api/streams/", stream_name, sizeof(stream_name)) != 0) {
         http_response_set_json_error(res, 400, "Invalid stream name in URL");
         return;
@@ -39,20 +39,16 @@ void handle_get_stream_retention(const http_request_t *req, http_response_t *res
         *suffix = '\0';
     }
 
-    // URL decode the stream name
-    char decoded_name[64] = {0};
-    url_decode(stream_name, decoded_name, sizeof(decoded_name));
-
     // Get retention config
     stream_retention_config_t config;
-    if (get_stream_retention_config(decoded_name, &config) != 0) {
+    if (get_stream_retention_config(stream_name, &config) != 0) {
         http_response_set_json_error(res, 404, "Stream not found or failed to get retention config");
         return;
     }
 
     // Build JSON response
     cJSON *json = cJSON_CreateObject();
-    cJSON_AddStringToObject(json, "stream_name", decoded_name);
+    cJSON_AddStringToObject(json, "stream_name", stream_name);
     cJSON_AddNumberToObject(json, "retention_days", config.retention_days);
     cJSON_AddNumberToObject(json, "detection_retention_days", config.detection_retention_days);
     cJSON_AddNumberToObject(json, "max_storage_mb", (double)config.max_storage_mb);
@@ -72,7 +68,7 @@ void handle_put_stream_retention(const http_request_t *req, http_response_t *res
     log_info("Handling PUT /api/streams/:name/retention request");
 
     // Extract stream name from URL
-    char stream_name[64] = {0};
+    char stream_name[MAX_STREAM_NAME] = {0};
     if (http_request_extract_path_param(req, "/api/streams/", stream_name, sizeof(stream_name)) != 0) {
         http_response_set_json_error(res, 400, "Invalid stream name in URL");
         return;
@@ -84,10 +80,6 @@ void handle_put_stream_retention(const http_request_t *req, http_response_t *res
         *suffix = '\0';
     }
 
-    // URL decode the stream name
-    char decoded_name[64] = {0};
-    url_decode(stream_name, decoded_name, sizeof(decoded_name));
-
     // Parse JSON body
     cJSON *json = httpd_parse_json_body(req);
     if (!json) {
@@ -97,7 +89,7 @@ void handle_put_stream_retention(const http_request_t *req, http_response_t *res
 
     // Get current config as defaults
     stream_retention_config_t config;
-    if (get_stream_retention_config(decoded_name, &config) != 0) {
+    if (get_stream_retention_config(stream_name, &config) != 0) {
         cJSON_Delete(json);
         http_response_set_json_error(res, 404, "Stream not found");
         return;
@@ -122,14 +114,14 @@ void handle_put_stream_retention(const http_request_t *req, http_response_t *res
     cJSON_Delete(json);
 
     // Save config
-    if (set_stream_retention_config(decoded_name, &config) != 0) {
+    if (set_stream_retention_config(stream_name, &config) != 0) {
         http_response_set_json_error(res, 500, "Failed to save retention config");
         return;
     }
 
     // Return updated config
     cJSON *response = cJSON_CreateObject();
-    cJSON_AddStringToObject(response, "stream_name", decoded_name);
+    cJSON_AddStringToObject(response, "stream_name", stream_name);
     cJSON_AddNumberToObject(response, "retention_days", config.retention_days);
     cJSON_AddNumberToObject(response, "detection_retention_days", config.detection_retention_days);
     cJSON_AddNumberToObject(response, "max_storage_mb", (double)config.max_storage_mb);
@@ -142,7 +134,7 @@ void handle_put_stream_retention(const http_request_t *req, http_response_t *res
     cJSON_Delete(response);
 
     log_info("Updated retention config for stream %s: retention=%d, detection_retention=%d, max_storage=%lu MB",
-             decoded_name, config.retention_days, config.detection_retention_days,
+             stream_name, config.retention_days, config.detection_retention_days,
              (unsigned long)config.max_storage_mb);
 }
 
