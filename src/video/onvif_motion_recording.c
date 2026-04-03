@@ -18,7 +18,6 @@
 #include "video/stream_manager.h"
 #include "core/logger.h"
 #include "core/config.h"
-#include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
 #include "database/database_manager.h"
 #include "database/db_recordings.h"
@@ -122,18 +121,52 @@ static int push_event(const motion_event_t *event) {
 /**
  * Pop an event from the queue
  */
+// Return codes for pop_event:
+//   0  = event successfully dequeued
+//  -1  = shutting down (no event)
+//  -2  = timeout (no event within 1 s), caller should tick the state machine
+//
+// FIX: recording stop bug - the old implementation used pthread_cond_wait
+// (blocking forever), so update_recording_state() was never called again
+// after a "no motion" event, and recordings never stopped.
+// The new implementation uses a 1-second timedwait so the event loop can
+// periodically tick the state machine even when no new events arrive.
+//
+// OLD CODE (kept for reference):
+// static int pop_event(motion_event_t *event) {
+//     if (!event) {
+//         return -1;
+//     }
+//     pthread_mutex_lock(&event_queue.mutex);
+//     // Wait for events if queue is empty
+//     while (event_queue.count == 0 && event_processor_running) {
+//         pthread_cond_wait(&event_queue.cond, &event_queue.mutex);  // <-- bug: blocks forever
+//     }
+//     if (event_queue.count == 0) {
+//         pthread_mutex_unlock(&event_queue.mutex);
+//         return -1;
+//     }
 static int pop_event(motion_event_t *event) {
     if (!event) {
         return -1;
     }
-    
+
     pthread_mutex_lock(&event_queue.mutex);
-    
-    // Wait for events if queue is empty
+
+    // Wait for events if queue is empty, but wake up every second so the
+    // event processor can tick the state machine (needed to transition
+    // RECORDING -> FINALIZING -> stop after a "no motion" event).
     while (event_queue.count == 0 && event_processor_running) {
-        pthread_cond_wait(&event_queue.cond, &event_queue.mutex);
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 1;
+        int rc = pthread_cond_timedwait(&event_queue.cond, &event_queue.mutex, &ts);
+        if (rc == ETIMEDOUT) {
+            pthread_mutex_unlock(&event_queue.mutex);
+            return -2; // periodic tick
+        }
     }
-    
+
     if (event_queue.count == 0) {
         pthread_mutex_unlock(&event_queue.mutex);
         return -1;
@@ -222,10 +255,6 @@ static int generate_recording_path(const char *stream_name, char *path, size_t p
         return -1;
     }
 
-    // Make sure we're using a valid path.
-    char stream_path[MAX_STREAM_NAME];
-    sanitize_stream_name(stream_name, stream_path, MAX_STREAM_NAME);
-
     // Get storage path from config
     extern config_t* get_streaming_config(void);
     const config_t *config = get_streaming_config();
@@ -249,23 +278,23 @@ static int generate_recording_path(const char *stream_name, char *path, size_t p
     
     char dir_path[MAX_PATH_LENGTH];
     snprintf(dir_path, sizeof(dir_path), "%s/%s/%s/%s/%s",
-             config->storage_path, stream_path, year, month, day);
+             config->storage_path, stream_name, year, month, day);
     
     // Create directories if they don't exist
     char temp_path[MAX_PATH_LENGTH];
-    snprintf(temp_path, sizeof(temp_path), "%s/%s", config->storage_path, stream_path);
+    snprintf(temp_path, sizeof(temp_path), "%s/%s", config->storage_path, stream_name);
     mkdir(temp_path, 0755);
     
-    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s", config->storage_path, stream_path, year);
+    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s", config->storage_path, stream_name, year);
     mkdir(temp_path, 0755);
     
-    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s/%s", config->storage_path, stream_path, year, month);
+    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s/%s", config->storage_path, stream_name, year, month);
     mkdir(temp_path, 0755);
     
     mkdir(dir_path, 0755);
     
     // Generate full file path
-    snprintf(path, path_size, "%s/%s_%s_motion.mp4", dir_path, stream_path, timestamp);
+    snprintf(path, path_size, "%s/%s_%s_motion.mp4", dir_path, stream_name, timestamp);
     
     log_info("Generated recording path: %s", path);
     return 0;
@@ -463,11 +492,39 @@ static void* event_processor_thread_func(void *arg) {
         motion_event_t event;
 
         // Get next event from queue
-        if (pop_event(&event) != 0) {
-            // Queue is empty or we're shutting down
-            if (!event_processor_running) {
-                break;
+        //
+        // FIX: recording stop bug - old code treated every non-zero return
+        // as "shutting down" and continued/broke without ever ticking the
+        // state machine for already-active recordings.
+        //
+        // OLD CODE (kept for reference):
+        // if (pop_event(&event) != 0) {
+        //     // Queue is empty or we're shutting down
+        //     if (!event_processor_running) {
+        //         break;
+        //     }
+        //     continue;  // <-- bug: skips update_recording_state entirely
+        // }
+        int pop_ret = pop_event(&event);
+        if (pop_ret == -1) {
+            // Shutting down
+            break;
+        }
+        if (pop_ret == -2) {
+            // Periodic 1-second tick: advance the state machine for every
+            // active recording context.  This is what actually drives the
+            // RECORDING -> FINALIZING -> stop transition after the grace
+            // period and the post-buffer timeout expire.
+            time_t now = time(NULL);
+            pthread_mutex_lock(&contexts_mutex);
+            for (int i = 0; i < g_config.max_streams; i++) {
+                if (recording_contexts[i].active && recording_contexts[i].enabled) {
+                    pthread_mutex_unlock(&contexts_mutex);
+                    update_recording_state(&recording_contexts[i], now);
+                    pthread_mutex_lock(&contexts_mutex);
+                }
             }
+            pthread_mutex_unlock(&contexts_mutex);
             continue;
         }
 
