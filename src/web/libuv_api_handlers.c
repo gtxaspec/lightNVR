@@ -32,6 +32,7 @@
 #include "web/api_handlers_go2rtc_proxy.h"
 #include "web/api_handlers_setup.h"
 #include "web/api_handlers_recording_tags.h"
+#include "web/api_handlers_metrics.h"
 #define LOG_COMPONENT "HTTP"
 #include "core/logger.h"
 #include "core/config.h"
@@ -65,6 +66,10 @@ int register_all_libuv_handlers(http_server_handle_t server) {
     // Health API
     http_server_register_handler(server, "/api/health", "GET", handle_get_health);
     http_server_register_handler(server, "/api/health/hls", "GET", handle_get_hls_health);
+
+    // Metrics & Telemetry API
+    http_server_register_handler(server, "/api/metrics", "GET", handle_get_metrics);
+    http_server_register_handler(server, "/api/telemetry/player", "POST", handle_post_player_telemetry);
 
     // Streams API
     http_server_register_handler(server, "/api/streams", "GET", handle_get_streams);

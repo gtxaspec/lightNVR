@@ -38,6 +38,9 @@ typedef struct {
     // If set, the next segment should start by writing this packet first.
     // This intentionally duplicates the boundary keyframe to bias toward overlap (no gaps).
     AVPacket *pending_video_keyframe;
+
+    // Stream name for telemetry instrumentation
+    char stream_name[MAX_STREAM_NAME];
 } segment_info_t;
 
 /**

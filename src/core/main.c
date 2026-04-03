@@ -43,6 +43,8 @@
 #include "video/ffmpeg_leak_detector.h"
 #include "video/onvif_motion_recording.h"
 #include "core/curl_init.h"
+#include "telemetry/stream_metrics.h"
+#include "telemetry/player_telemetry.h"
 
 // Include go2rtc headers if USE_GO2RTC is defined
 #ifdef USE_GO2RTC
@@ -804,6 +806,13 @@ int main(int argc, char *argv[]) {
         goto cleanup;
     }
 
+    // Initialize telemetry subsystem
+    if (metrics_init(config.max_streams) != 0) {
+        log_error("Failed to initialize metrics subsystem");
+        goto cleanup;
+    }
+    player_telemetry_init();
+
     // Initialize go2rtc integration if enabled
     #ifdef USE_GO2RTC
     if (!config.go2rtc_enabled) {
@@ -1203,6 +1212,11 @@ int main(int argc, char *argv[]) {
     // Stop health check system to prevent it from trying to restart the web server
     log_info("Stopping health check system...");
     cleanup_health_check_system();
+
+    // Shutdown telemetry subsystem
+    log_info("Shutting down telemetry...");
+    metrics_shutdown();
+    player_telemetry_shutdown();
 
     // Now that we're in the main thread (not signal handler), we can safely
     // call initiate_shutdown() which uses mutexes and logging

@@ -16,6 +16,7 @@ import { forceNavigation } from '../../utils/navigation-utils.js';
 import { formatUtils } from './recordings/formatUtils.js';
 import { useI18n } from '../../i18n.js';
 import { useQueryClient } from '../../query-client.js';
+import { createPlayerTelemetry } from '../../utils/player-telemetry.js';
 
 /**
  * MSEVideoCell component
@@ -543,6 +544,29 @@ export function MSEVideoCell({
       video.removeEventListener('error', handleError);
     };
   }, [stream?.name]);
+
+  // Player telemetry (TTFF, rebuffer tracking)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !stream?.name) return;
+
+    const telemetry = createPlayerTelemetry(stream.name, 'mse');
+
+    const onPlaying = () => telemetry.recordFirstFrame();
+    const onWaiting = () => telemetry.recordRebufferStart();
+    const onCanPlay = () => telemetry.recordRebufferEnd();
+
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('canplay', onCanPlay);
+
+    return () => {
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('canplay', onCanPlay);
+      telemetry.destroy();
+    };
+  }, [stream?.name, retryCount]);
 
   return (
     <div

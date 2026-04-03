@@ -239,6 +239,7 @@ int init_unified_detection_system(void) {
     }
 
     system_initialized = true;
+    log_info("Unified detection system initialized! Address: %p", (void*)&system_initialized);
     pthread_mutex_unlock(&contexts_mutex);
 
     log_info("Unified detection system initialized");
@@ -417,6 +418,7 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
         return -1;
     }
 
+    log_error("Unified detection system not initialized! Address of system_initialized: %p, value: %d", (void*)&system_initialized, system_initialized);
     if (!system_initialized) {
         log_error("Unified detection system not initialized");
         return -1;

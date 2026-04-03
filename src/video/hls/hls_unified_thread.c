@@ -45,6 +45,7 @@
 #include "core/url_utils.h"
 #include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
+#include "telemetry/stream_metrics.h"
 
 // MEMORY LEAK FIX: Forward declaration for FFmpeg buffer cleanup function
 // We'll implement our own version to clean up any leaked buffers
@@ -1408,6 +1409,9 @@ void *hls_unified_thread_func(void *arg) {
 
                 // Process packets based on stream type
                 if (pkt->stream_index == video_stream_idx) {
+                    // Record frame for telemetry metrics
+                    metrics_record_frame(stream_name, pkt->size, true);
+
                     // This is a video packet - process it
 
                     // CRITICAL FIX: Check if context is still valid before accessing

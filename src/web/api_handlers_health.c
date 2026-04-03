@@ -25,6 +25,8 @@
 #include "web/api_handlers_health.h"
 #include "web/http_server.h"
 #include "web/request_response.h"
+#include "telemetry/stream_metrics.h"
+#include "storage/storage_manager.h"
 #define LOG_COMPONENT "HealthCheck"
 #include "core/logger.h"
 #include "core/config.h"
@@ -154,11 +156,17 @@ static bool perform_health_check(void) {
  * @brief Backend-agnostic handler for GET /api/health
  */
 void handle_get_health(const http_request_t *req, http_response_t *res) {
-    (void)req;
     log_info("Handling GET /api/health request");
 
     // Update last health check time
     g_last_health_check = time(NULL);
+
+    // Check for ?sparklines=true query parameter
+    char sparklines_param[8] = {0};
+    bool include_sparklines = false;
+    if (http_request_get_query_param(req, "sparklines", sparklines_param, sizeof(sparklines_param)) == 0) {
+        include_sparklines = (strcmp(sparklines_param, "true") == 0 || strcmp(sparklines_param, "1") == 0);
+    }
 
     // Create JSON object
     cJSON *health = cJSON_CreateObject();
@@ -168,22 +176,107 @@ void handle_get_health(const http_request_t *req, http_response_t *res) {
         return;
     }
 
-    // Add health status
+    // Backward-compatible fields
     cJSON_AddBoolToObject(health, "healthy", true);
-    cJSON_AddStringToObject(health, "status", "ok");
-
-    // Add metrics
     cJSON_AddNumberToObject(health, "uptime", difftime(time(NULL), g_start_time));
     cJSON_AddNumberToObject(health, "totalRequests", g_total_requests);
     cJSON_AddNumberToObject(health, "failedRequests", g_failed_requests);
 
-    // Add timestamp
+    // Timestamp
     char timestamp[32];
     time_t now = time(NULL);
     struct tm tm_buf;
     const struct tm *tm_info = localtime_r(&now, &tm_buf);
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
     cJSON_AddStringToObject(health, "timestamp", timestamp);
+
+    // Stream health summary
+    int max_streams = metrics_get_max_streams();
+    stream_metrics_t *snaps = NULL;
+    int count = 0;
+    if (max_streams > 0) {
+        snaps = calloc((size_t)max_streams, sizeof(stream_metrics_t));
+        if (snaps) {
+            count = metrics_snapshot_all(snaps, max_streams);
+        }
+    }
+
+    int streams_up = 0, streams_degraded = 0, streams_down = 0;
+    for (int i = 0; i < count; i++) {
+        switch ((stream_health_status_t)snaps[i].health_status) {
+            case STREAM_HEALTH_UP:       streams_up++;       break;
+            case STREAM_HEALTH_DEGRADED: streams_degraded++; break;
+            case STREAM_HEALTH_DOWN:     streams_down++;     break;
+        }
+    }
+
+    // Overall status
+    const char *overall_status = "healthy";
+    if (streams_down > 0) overall_status = "critical";
+    else if (streams_degraded > 0) overall_status = "degraded";
+    cJSON_AddStringToObject(health, "status", overall_status);
+
+    // Streams summary object
+    cJSON *streams_obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(streams_obj, "total", count);
+    cJSON_AddNumberToObject(streams_obj, "up", streams_up);
+    cJSON_AddNumberToObject(streams_obj, "degraded", streams_degraded);
+    cJSON_AddNumberToObject(streams_obj, "down", streams_down);
+    cJSON_AddItemToObject(health, "streams", streams_obj);
+
+    // Storage summary
+    storage_health_t storage_health;
+    get_storage_health(&storage_health);
+    cJSON *storage_obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(storage_obj, "used_bytes", (double)storage_health.used_space_bytes);
+    cJSON_AddNumberToObject(storage_obj, "available_bytes", (double)storage_health.free_space_bytes);
+    cJSON_AddItemToObject(health, "storage", storage_obj);
+
+    // Per-stream detail array
+    cJSON *detail_arr = cJSON_CreateArray();
+    for (int i = 0; i < count; i++) {
+        cJSON *sd = cJSON_CreateObject();
+        cJSON_AddStringToObject(sd, "name", snaps[i].stream_name);
+
+        const char *status_str = "down";
+        switch ((stream_health_status_t)snaps[i].health_status) {
+            case STREAM_HEALTH_UP:       status_str = "up";       break;
+            case STREAM_HEALTH_DEGRADED: status_str = "degraded"; break;
+            case STREAM_HEALTH_DOWN:     status_str = "down";     break;
+        }
+        cJSON_AddStringToObject(sd, "status", status_str);
+        cJSON_AddNumberToObject(sd, "fps", snaps[i].current_fps);
+        cJSON_AddNumberToObject(sd, "configured_fps", snaps[i].configured_fps);
+        cJSON_AddNumberToObject(sd, "bitrate_bps", snaps[i].current_bitrate_bps);
+        cJSON_AddNumberToObject(sd, "uptime_seconds", (double)snaps[i].uptime_seconds);
+        cJSON_AddNumberToObject(sd, "reconnects", (double)snaps[i].reconnects_total);
+        cJSON_AddNumberToObject(sd, "last_frame_ts", (double)snaps[i].last_frame_ts);
+        cJSON_AddNumberToObject(sd, "frames_total", (double)snaps[i].frames_total);
+        cJSON_AddNumberToObject(sd, "frames_dropped", (double)snaps[i].frames_dropped);
+        cJSON_AddNumberToObject(sd, "connection_latency_ms", snaps[i].connection_latency_ms);
+        cJSON_AddBoolToObject(sd, "recording_active", snaps[i].recording_active != 0);
+        cJSON_AddNumberToObject(sd, "recording_gaps", (double)snaps[i].recording_gaps_total);
+
+        // Sparkline data (last 60 samples = 5 minutes at 5s intervals)
+        if (include_sparklines) {
+            metrics_ring_sample_t ring_data[60];
+            int ring_count = metrics_get_ring_data(snaps[i].stream_name, ring_data, 60);
+
+            cJSON *fps_arr = cJSON_CreateArray();
+            cJSON *bitrate_arr = cJSON_CreateArray();
+            for (int j = 0; j < ring_count; j++) {
+                cJSON_AddItemToArray(fps_arr, cJSON_CreateNumber(ring_data[j].fps));
+                cJSON_AddItemToArray(bitrate_arr, cJSON_CreateNumber(ring_data[j].bitrate_kbps));
+            }
+            cJSON_AddItemToObject(sd, "sparkline_fps", fps_arr);
+            cJSON_AddItemToObject(sd, "sparkline_bitrate", bitrate_arr);
+        }
+
+        cJSON_AddItemToArray(detail_arr, sd);
+    }
+    cJSON_AddItemToObject(health, "streams_detail", detail_arr);
+
+    free(snaps);
 
     // Convert to string
     char *json_str = cJSON_PrintUnformatted(health);

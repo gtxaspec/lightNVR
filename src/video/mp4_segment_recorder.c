@@ -31,6 +31,7 @@
 #include "video/mp4_writer.h"
 #include "video/mp4_writer_internal.h"
 #include "video/mp4_segment_recorder.h"
+#include "telemetry/stream_metrics.h"
 
 // DTS/PTS limits for MP4 format handling
 // MP4 containers use a signed 32-bit time scale; exceeding this can cause failures.
@@ -945,6 +946,11 @@ int record_segment(const char *rtsp_url, const char *output_file, int duration, 
 
         // Process video packets
         if (pkt->stream_index == video_stream_idx) {
+            // Record frame for telemetry metrics
+            if (segment_info_ptr->stream_name[0] != '\0') {
+                metrics_record_frame(segment_info_ptr->stream_name, pkt->size, true);
+            }
+
             // Check if this is a key frame
             bool is_keyframe = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
 

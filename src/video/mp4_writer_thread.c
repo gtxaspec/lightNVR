@@ -37,6 +37,7 @@
 #include "database/db_recordings.h"
 #include "database/db_streams.h"
 #include "storage/storage_manager_streams_cache.h"
+#include "telemetry/stream_metrics.h"
 
 
 // Callback invoked by record_segment when the first keyframe is detected
@@ -105,6 +106,11 @@ static void *mp4_writer_rtsp_thread(void *arg) {
     thread_ctx->segment_info.has_audio = false;
     thread_ctx->segment_info.last_frame_was_key = false;
     thread_ctx->segment_info.pending_video_keyframe = NULL;
+    memset(thread_ctx->segment_info.stream_name, 0, sizeof(thread_ctx->segment_info.stream_name));
+    if (thread_ctx->writer && thread_ctx->writer->stream_name[0] != '\0') {
+        strncpy(thread_ctx->segment_info.stream_name, thread_ctx->writer->stream_name,
+                MAX_STREAM_NAME - 1);
+    }
     thread_ctx->video_params_detected = false;
     pthread_mutex_init(&thread_ctx->context_mutex, NULL);
 
@@ -136,6 +142,9 @@ static void *mp4_writer_rtsp_thread(void *arg) {
     log_info("Initialized segment info: index=%d, has_audio=%d, last_frame_was_key=%d",
             thread_ctx->segment_info.segment_index, thread_ctx->segment_info.has_audio,
             thread_ctx->segment_info.last_frame_was_key);
+
+    // Notify telemetry that recording is active for this stream
+    metrics_set_recording_active(stream_name, true);
 
     // Main loop to record segments
     while (thread_ctx->running && !thread_ctx->shutdown_requested) {
@@ -414,15 +423,27 @@ static void *mp4_writer_rtsp_thread(void *arg) {
         // BUGFIX: Pass per-thread shutdown_requested flag so the FFmpeg interrupt callback
         // can interrupt blocking calls when this specific thread needs to be stopped
         // (e.g., during dead recording recovery), not just during global shutdown.
+        time_t segment_start = time(NULL);
         ret = record_segment(thread_ctx->rtsp_url, thread_ctx->writer->output_path,
                            segment_duration, thread_ctx->writer->has_audio,
                            &thread_ctx->input_ctx, &thread_ctx->segment_info,
                            on_segment_started_cb, thread_ctx,
                            &thread_ctx->shutdown_requested);
+        time_t segment_end = time(NULL);
 
         log_info("Finished segment recording with info: index=%d, has_audio=%d, last_frame_was_key=%d",
                 thread_ctx->segment_info.segment_index, thread_ctx->segment_info.has_audio,
                 thread_ctx->segment_info.last_frame_was_key);
+
+        // Notify telemetry of completed segment (for gap detection and byte tracking)
+        if (ret >= 0) {
+            struct stat st;
+            uint64_t seg_bytes = 0;
+            if (stat(thread_ctx->writer->output_path, &st) == 0) {
+                seg_bytes = (uint64_t)st.st_size;
+            }
+            metrics_record_segment_complete(stream_name, segment_start, segment_end, seg_bytes);
+        }
 
         if (ret < 0) {
             log_error("Failed to record segment for stream %s (error: %d), implementing retry strategy...",
@@ -676,6 +697,9 @@ thread_cleanup:
 
     // Log that we've completed cleanup
     log_info("Completed cleanup of FFmpeg resources for stream %s", stream_name);
+
+    // Notify telemetry that recording has stopped
+    metrics_set_recording_active(stream_name, false);
 
     log_info("RTSP reading thread for stream %s exited", stream_name);
     return NULL;

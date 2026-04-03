@@ -433,6 +433,7 @@ list(APPEND VIDEO_SOURCES ${FFMPEG_LEAK_DETECTOR_SOURCES})
 
 # Add HLS sources
 file(GLOB HLS_SOURCES "src/video/hls/*.c")
+file(GLOB TELEMETRY_SOURCES "src/telemetry/*.c")
 
 # Add unified HLS thread sources explicitly to ensure they're included
 set(HLS_UNIFIED_THREAD_SOURCES
@@ -462,6 +463,7 @@ set(SOURCES
         ${VIDEO_SOURCES}
         ${HLS_SOURCES}
         ${HLS_UNIFIED_THREAD_SOURCES}
+        ${TELEMETRY_SOURCES}
         ${EZXML_SOURCES}
 )
 

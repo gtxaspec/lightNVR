@@ -18,6 +18,7 @@
 #ifdef USE_GO2RTC
 #include "video/go2rtc/go2rtc_integration.h"
 #endif
+#include "telemetry/stream_metrics.h"
 
 /**
  * BUGFIX: Modified stop_stream_with_state to always stop HLS streaming and MP4 recording
@@ -564,6 +565,12 @@ int start_stream_with_state(stream_state_manager_t *state) {
     if (any_component_started) {
         state->state = STREAM_STATE_ACTIVE;
         log_info("Stream '%s' is now running", state->name);
+
+        // Initialize telemetry slot with configured FPS
+        metrics_get_slot(state->name);
+        if (state->config.fps > 0) {
+            metrics_set_configured_fps(state->name, (double)state->config.fps);
+        }
     } else {
         state->state = STREAM_STATE_ERROR;
         log_error("Failed to start any components for stream '%s'", state->name);
@@ -711,6 +718,19 @@ int handle_stream_error(stream_state_manager_t *state, int error_code, const cha
     // Log the error
     log_error("Stream '%s' error: %s (code: %d)", state->name, error_message, error_code);
 
+    // Record error in telemetry metrics (classify by error code)
+    {
+        const char *error_type = "io";
+        if (error_code == -ETIMEDOUT) {
+            error_type = "timeout";
+        } else if (error_code == -EINVAL) {
+            error_type = "protocol";
+        } else if (error_code == -EIO) {
+            error_type = "io";
+        }
+        metrics_record_error(state->name, error_type);
+    }
+
     // Check if we should attempt reconnection
     bool should_reconnect = false;
 
@@ -725,6 +745,9 @@ int handle_stream_error(stream_state_manager_t *state, int error_code, const cha
         state->protocol_state.reconnect_attempts++;
         state->protocol_state.last_reconnect_time = time(NULL);
         state->stats.reconnects++;
+
+        // Record reconnect in telemetry
+        metrics_record_reconnect(state->name);
     } else {
         // If not active, just set to error state
         state->state = STREAM_STATE_ERROR;
