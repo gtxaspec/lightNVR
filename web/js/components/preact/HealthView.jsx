@@ -148,8 +148,7 @@ export function HealthView() {
 
     if (isLoading && !health) {
         return (
-            <div class="p-6">
-                <h1 class="text-2xl font-bold mb-4">{t('streamHealth.title')}</h1>
+            <div>
                 <div class="text-muted-foreground">{t('streamHealth.loading')}</div>
             </div>
         );
@@ -157,8 +156,7 @@ export function HealthView() {
 
     if (error && !health) {
         return (
-            <div class="p-6">
-                <h1 class="text-2xl font-bold mb-4">{t('streamHealth.title')}</h1>
+            <div>
                 <div class="text-destructive">{t('streamHealth.error')}</div>
             </div>
         );
@@ -173,9 +171,7 @@ export function HealthView() {
         : 0;
 
     return (
-        <div class="p-6">
-            <h1 class="text-2xl font-bold mb-4">{t('streamHealth.title')}</h1>
-
+        <div>
             {/* Fleet Summary Bar */}
             <div class="bg-card text-card-foreground rounded-lg shadow p-4 mb-6">
                 <div class="flex flex-wrap items-center gap-6">

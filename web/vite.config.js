@@ -139,7 +139,6 @@ export default defineConfig({
         system: resolve(__dirname, 'system.html'),
         timeline: resolve(__dirname, 'timeline.html'),
         users: resolve(__dirname, 'users.html'),
-        health: resolve(__dirname, 'health.html'),
         hls: resolve(__dirname, 'hls.html'),
       },
       output: {

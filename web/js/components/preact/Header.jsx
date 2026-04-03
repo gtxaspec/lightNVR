@@ -246,7 +246,6 @@ export function Header({ version = VERSION }) {
     { id: 'nav-recordings', href: 'recordings.html', label: t('nav.recordings') },
     { id: 'nav-streams', href: 'streams.html', label: t('nav.streams') },
     { id: 'nav-settings', href: 'settings.html', label: t('nav.settings') },
-    { id: 'nav-health', href: 'health.html', label: t('nav.health') },
     ...(isAdmin ? [{ id: 'nav-users', href: 'users.html', label: t('nav.users') }] : []),
     ...(isAdmin ? [{ id: 'nav-system', href: 'system.html', label: t('nav.system') }] : []),
   ];

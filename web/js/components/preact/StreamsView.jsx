@@ -10,6 +10,7 @@ import { ContentLoader } from './LoadingIndicator.jsx';
 import { StreamDeleteModal } from './StreamDeleteModal.jsx';
 import { StreamBulkActionModal } from './StreamBulkActionModal.jsx';
 import { StreamConfigModal } from './StreamConfigModal.jsx';
+import { HealthView } from './HealthView.jsx';
 import { validateSession } from '../../utils/auth-utils.js';
 import { obfuscateUrlCredentials, urlHasCredentials } from '../../utils/url-utils.js';
 import {
@@ -63,6 +64,7 @@ export function StreamsView() {
   const shouldHideCredentials = isDemoMode || userRole === 'viewer';
 
   // State for streams data
+  const [activeTab, setActiveTab] = useState('streams');
   const [modalVisible, setModalVisible] = useState(false);
   const [onvifModalVisible, setOnvifModalVisible] = useState(false);
   const [showCustomNameInput, setShowCustomNameInput] = useState(false);
@@ -1391,12 +1393,53 @@ export function StreamsView() {
         </div>
       </div>
 
-      <ContentLoader
-          isLoading={isLoading}
-          hasData={hasData}
-          loadingMessage={t('streams.loadingStreams')}
-          emptyMessage={canModifyStreams ? t('streams.noStreamsConfiguredYetAdd') : t('streams.noStreamsConfiguredYet')}
-      >
+      <div className="mb-4 border-b border-border" role="tablist" aria-label={t('nav.streams')}>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            id="streams-tab"
+            role="tab"
+            aria-selected={activeTab === 'streams'}
+            aria-controls="streams-panel"
+            className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'streams'
+                ? 'bg-card text-card-foreground border border-border border-b-0 -mb-px'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setActiveTab('streams')}
+          >
+            {t('nav.streams')}
+          </button>
+          <button
+            type="button"
+            id="health-tab"
+            role="tab"
+            aria-selected={activeTab === 'health'}
+            aria-controls="health-panel"
+            className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'health'
+                ? 'bg-card text-card-foreground border border-border border-b-0 -mb-px'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setActiveTab('health')}
+          >
+            {t('nav.health')}
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'health' ? (
+        <div role="tabpanel" id="health-panel" aria-labelledby="health-tab">
+          <HealthView />
+        </div>
+      ) : (
+        <div role="tabpanel" id="streams-panel" aria-labelledby="streams-tab">
+          <ContentLoader
+              isLoading={isLoading}
+              hasData={hasData}
+              loadingMessage={t('streams.loadingStreams')}
+              emptyMessage={canModifyStreams ? t('streams.noStreamsConfiguredYetAdd') : t('streams.noStreamsConfiguredYet')}
+          >
         <div className="streams-container bg-card text-card-foreground rounded-lg shadow overflow-hidden">
           {/* Bulk action toolbar — visible in selection mode */}
           {canModifyStreams && selectionMode && (
@@ -1739,6 +1782,8 @@ export function StreamsView() {
           </div>
         </div>
       </ContentLoader>
+        </div>
+      )}
 
       {deleteModalVisible && streamToDelete && (
         <StreamDeleteModal
