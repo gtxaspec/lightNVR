@@ -25,15 +25,18 @@ int main(int argc, char **argv) {
     log_info("Starting unified detection test");
 
     // Initialize detection model system
-    assert(init_detection_model_system() == 0);
+    int m_ret = init_detection_model_system();
+    assert(m_ret == 0);
     log_info("Detection model system initialized");
 
     // Initialize detection integration system
-    assert(init_detection_integration() == 0);
+    int d_ret = init_detection_integration();
+    assert(d_ret == 0);
     log_info("Detection integration system initialized");
 
     // Initialize unified detection system
-    assert(init_unified_detection_system() == 0);
+    int u_ret = init_unified_detection_system();
+    assert(u_ret == 0);
     log_info("Unified detection system initialized");
 
     // Check initial state - no threads running

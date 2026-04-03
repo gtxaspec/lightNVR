@@ -32,9 +32,9 @@ static void send_xml_response(int client_fd, const char *body) {
     send(client_fd, response, (size_t)len, 0);
 }
 
-static void *fake_onvif_server_main(void *arg) {
+    static void *fake_onvif_server_main(void *arg) {
     fake_onvif_server_t *server = (fake_onvif_server_t *)arg;
-    while (!server->stop && server->connections < 2) {
+    while (!server->stop && server->connections < 3) {
         fd_set readfds;
         struct timeval timeout = {.tv_sec = 0, .tv_usec = 100000};
         FD_ZERO(&readfds);
@@ -50,6 +50,14 @@ static void *fake_onvif_server_main(void *arg) {
         server->connections++;
 
         if (server->connections == 1) {
+            // GetServices response
+            send_xml_response(client_fd,
+                "<Envelope><Body><GetServicesResponse>"
+                "<Service><Namespace>http://www.onvif.org/ver10/events/wsdl</Namespace>"
+                "<XAddr>http://127.0.0.1:0/onvif/events</XAddr></Service>"
+                "</GetServicesResponse></Body></Envelope>");
+        } else if (server->connections == 2) {
+            // Subscribe response
             char body[512];
             snprintf(body, sizeof(body),
                      "<Envelope><Body><wsa:Address>http://127.0.0.1:%d/pull_service</wsa:Address>"
@@ -116,7 +124,7 @@ void test_init_detection_system_initializes_onvif_detection(void) {
     TEST_ASSERT_EQUAL_INT(0, detect_motion_onvif(url, "", "", &result, ""));
 
     stop_fake_onvif_server(&server);
-    TEST_ASSERT_EQUAL_INT(2, server.connections);
+    TEST_ASSERT_EQUAL_INT(3, server.connections);
     TEST_ASSERT_EQUAL_INT(0, result.count);
 }
 
