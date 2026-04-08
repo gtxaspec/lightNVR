@@ -486,10 +486,25 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // Web bind address
     cJSON *web_bind_ip = cJSON_GetObjectItem(settings, "web_bind_ip");
     if (web_bind_ip && cJSON_IsString(web_bind_ip)) {
-        strncpy(g_config.web_bind_ip, web_bind_ip->valuestring, sizeof(g_config.web_bind_ip) - 1);
-        g_config.web_bind_ip[sizeof(g_config.web_bind_ip) - 1] = '\0';
-        settings_changed = true;
-        log_info("Updated web_bind_ip: %s", g_config.web_bind_ip);
+        const char *new_bind_ip = web_bind_ip->valuestring;
+        bool bind_ip_empty = (new_bind_ip == NULL);
+
+        if (!bind_ip_empty) {
+            while (isspace((unsigned char)*new_bind_ip)) {
+                new_bind_ip++;
+            }
+            bind_ip_empty = (*new_bind_ip == '\0');
+        }
+
+        if (bind_ip_empty) {
+            log_warn("Rejected empty web_bind_ip update");
+        } else if (strcmp(g_config.web_bind_ip, new_bind_ip) != 0) {
+            strncpy(g_config.web_bind_ip, new_bind_ip, sizeof(g_config.web_bind_ip) - 1);
+            g_config.web_bind_ip[sizeof(g_config.web_bind_ip) - 1] = '\0';
+            settings_changed = true;
+            restart_required = true;
+            log_info("Updated web_bind_ip: %s (restart required)", g_config.web_bind_ip);
+        }
     }
 
     // Web root
