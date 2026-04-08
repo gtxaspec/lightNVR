@@ -295,7 +295,8 @@ int libuv_server_start(http_server_handle_t handle) {
     struct sockaddr_in addr;
     int r = uv_ip4_addr(server->config.bind_ip, server->config.port, &addr);
     if (r != 0) {
-        log_error("libuv_server_start: IPv4 addr/port failed: %s", uv_strerror(r));
+        log_error("libuv_server_start: IPv4 addr/port failed for %s:%d: %s",
+                  server->config.bind_ip, server->config.port, uv_strerror(r));
         return -1;
     }
 
