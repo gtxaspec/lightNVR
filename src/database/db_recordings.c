@@ -626,7 +626,7 @@ int get_recording_count(time_t start_time, time_t end_time,
     char sql[8192];
 
     // Use trigger_type and/or detections table to filter detection-based recordings
-    snprintf(sql, sizeof(sql), "SELECT COUNT(*) FROM recordings r WHERE r.is_complete = 1 AND r.end_time IS NOT NULL");
+    safe_strcpy(sql, "SELECT COUNT(*) FROM recordings r WHERE r.is_complete = 1 AND r.end_time IS NOT NULL", sizeof(sql), 0);
 
     if (has_detection == 1) {
         // Filter by trigger_type = 'detection' OR existence of linked detections via recording_id (fast index lookup)
@@ -969,7 +969,7 @@ int get_recording_metadata_paginated(time_t start_time, time_t end_time,
 
     // Add LIMIT and OFFSET for pagination
     char limit_clause[64];
-    snprintf(limit_clause, sizeof(limit_clause), " LIMIT ? OFFSET ?");
+    safe_strcpy(limit_clause, " LIMIT ? OFFSET ?", sizeof(limit_clause), 0);
     safe_strcat(sql, limit_clause, sizeof(sql));
 
     log_debug("SQL query for get_recording_metadata_paginated: %s", sql);

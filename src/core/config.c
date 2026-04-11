@@ -307,17 +307,17 @@ void load_default_config(config_t *config) {
     }
     
     // General settings
-    snprintf(config->pid_file, MAX_PATH_LENGTH, "/var/run/lightnvr.pid");
-    snprintf(config->log_file, MAX_PATH_LENGTH, "/var/log/lightnvr.log");
+    safe_strcpy(config->pid_file, "/var/run/lightnvr.pid", MAX_PATH_LENGTH, 0);
+    safe_strcpy(config->log_file, "/var/log/lightnvr.log", MAX_PATH_LENGTH, 0);
     config->log_level = LOG_LEVEL_INFO;
 
     // Syslog settings
     config->syslog_enabled = false;
-    snprintf(config->syslog_ident, sizeof(config->syslog_ident), "lightnvr");
+    safe_strcpy(config->syslog_ident, "lightnvr", sizeof(config->syslog_ident), 0);
     config->syslog_facility = LOG_USER;
 
     // Storage settings
-    snprintf(config->storage_path, MAX_PATH_LENGTH, "/var/lib/lightnvr/recordings");
+    safe_strcpy(config->storage_path, "/var/lib/lightnvr/recordings", MAX_PATH_LENGTH, 0);
     config->storage_path_hls[0] = '\0'; // Empty by default, will use storage_path if not specified
     config->max_storage_size = 0; // 0 means unlimited
     config->retention_days = 30;
@@ -328,35 +328,35 @@ void load_default_config(config_t *config) {
 
     // MP4 recording settings
     config->record_mp4_directly = false;
-    snprintf(config->mp4_storage_path, sizeof(config->mp4_storage_path), "/var/lib/lightnvr/recordings/mp4");
+    safe_strcpy(config->mp4_storage_path, "/var/lib/lightnvr/recordings/mp4", sizeof(config->mp4_storage_path), 0);
     config->mp4_segment_duration = 900; // 15 minutes
     config->mp4_retention_days = 30;
 
     // Models settings
-    snprintf(config->models_path, MAX_PATH_LENGTH, "/var/lib/lightnvr/models");
+    safe_strcpy(config->models_path, "/var/lib/lightnvr/models", MAX_PATH_LENGTH, 0);
     
     // API detection settings
-    snprintf(config->api_detection_url, MAX_URL_LENGTH, "http://localhost:8000/detect");
-    snprintf(config->api_detection_backend, 32, "onnx"); // Default to ONNX backend
+    safe_strcpy(config->api_detection_url, "http://localhost:8000/detect", MAX_URL_LENGTH, 0);
+    safe_strcpy(config->api_detection_backend, "onnx", 32, 0); // Default to ONNX backend
 
     // Global detection defaults
     config->default_detection_threshold = 50;  // 50% confidence threshold
     config->default_pre_detection_buffer = 5;   // 5 seconds before detection
     config->default_post_detection_buffer = 10; // 10 seconds after detection
-    snprintf(config->default_buffer_strategy, 32, "auto"); // Auto-select buffer strategy
+    safe_strcpy(config->default_buffer_strategy, "auto", 32, 0); // Auto-select buffer strategy
 
     // Database settings
-    snprintf(config->db_path, MAX_PATH_LENGTH, "/var/lib/lightnvr/lightnvr.db");
+    safe_strcpy(config->db_path, "/var/lib/lightnvr/lightnvr.db", MAX_PATH_LENGTH, 0);
     config->db_backup_interval_minutes = 60;
     config->db_backup_retention_count = 24;
     config->db_post_backup_script[0] = '\0';
     
     // Web server settings
     config->web_port = 8080;
-    snprintf(config->web_bind_ip, 32, "0.0.0.0");
-    snprintf(config->web_root, MAX_PATH_LENGTH, "/var/lib/lightnvr/www");
+    safe_strcpy(config->web_bind_ip, "0.0.0.0", 32, 0);
+    safe_strcpy(config->web_root, "/var/lib/lightnvr/www", MAX_PATH_LENGTH, 0);
     config->web_auth_enabled = true;
-    snprintf(config->web_username, 32, "admin");
+    safe_strcpy(config->web_username, "admin", 32, 0);
     // No default password - will be generated randomly on first run
     config->web_password[0] = '\0';
     config->webrtc_disabled = false; // WebRTC is enabled by default
@@ -385,7 +385,7 @@ void load_default_config(config_t *config) {
     // Memory optimization
     config->buffer_size = 1024; // 1024 KB (1 MB) buffer size
     config->use_swap = true;
-    snprintf(config->swap_file, MAX_PATH_LENGTH, "/var/lib/lightnvr/swap");
+    safe_strcpy(config->swap_file, "/var/lib/lightnvr/swap", MAX_PATH_LENGTH, 0);
     config->swap_size = (uint64_t)128 * 1024 * 1024; // 128MB swap
     
     // Hardware acceleration
@@ -399,14 +399,14 @@ void load_default_config(config_t *config) {
     // CMake passes these as string literals already (e.g. -DGO2RTC_BINARY_PATH_RAW="/usr/local/bin/go2rtc"),
     // so they must be used directly — NOT through STRINGIFY, which would double-quote the value.
 #ifdef GO2RTC_BINARY_PATH_RAW
-    snprintf(config->go2rtc_binary_path, MAX_PATH_LENGTH, "%s", GO2RTC_BINARY_PATH_RAW);
+    safe_strcpy(config->go2rtc_binary_path, GO2RTC_BINARY_PATH_RAW, MAX_PATH_LENGTH, 0);
 #else
-    snprintf(config->go2rtc_binary_path, MAX_PATH_LENGTH, "/usr/local/bin/go2rtc");
+    safe_strcpy(config->go2rtc_binary_path, "/usr/local/bin/go2rtc", MAX_PATH_LENGTH, 0);
 #endif
 #ifdef GO2RTC_CONFIG_DIR_RAW
-    snprintf(config->go2rtc_config_dir, MAX_PATH_LENGTH, "%s", GO2RTC_CONFIG_DIR_RAW);
+    safe_strcpy(config->go2rtc_config_dir, GO2RTC_CONFIG_DIR_RAW, MAX_PATH_LENGTH, 0);
 #else
-    snprintf(config->go2rtc_config_dir, MAX_PATH_LENGTH, "/etc/lightnvr/go2rtc");
+    safe_strcpy(config->go2rtc_config_dir, "/etc/lightnvr/go2rtc", MAX_PATH_LENGTH, 0);
 #endif
     config->go2rtc_api_port = 1984;
     config->go2rtc_rtsp_port = 8554;  // Default RTSP listen port
@@ -417,7 +417,7 @@ void load_default_config(config_t *config) {
     config->go2rtc_webrtc_enabled = true;  // Enable WebRTC by default
     config->go2rtc_webrtc_listen_port = 8555;  // Default WebRTC listen port
     config->go2rtc_stun_enabled = true;  // Enable STUN by default for NAT traversal
-    snprintf(config->go2rtc_stun_server, sizeof(config->go2rtc_stun_server), "stun.l.google.com:19302");
+    safe_strcpy(config->go2rtc_stun_server, "stun.l.google.com:19302", sizeof(config->go2rtc_stun_server), 0);
     config->go2rtc_external_ip[0] = '\0';  // Empty by default (auto-detect)
     config->go2rtc_ice_servers[0] = '\0';  // Empty by default (use STUN server)
 
@@ -430,7 +430,7 @@ void load_default_config(config_t *config) {
     // ONVIF discovery settings
     config->onvif_discovery_enabled = false;  // Disabled by default
     config->onvif_discovery_interval = 300;   // 5 minutes between scans
-    snprintf(config->onvif_discovery_network, sizeof(config->onvif_discovery_network), "auto");
+    safe_strcpy(config->onvif_discovery_network, "auto", sizeof(config->onvif_discovery_network), 0);
 
     // Initialize default values for detection-based recording in streams
     for (int i = 0; i < config->max_streams; i++) {
@@ -458,8 +458,8 @@ void load_default_config(config_t *config) {
     config->mqtt_broker_port = 1883;            // Default MQTT port
     config->mqtt_username[0] = '\0';            // Optional
     config->mqtt_password[0] = '\0';            // Optional
-    snprintf(config->mqtt_client_id, sizeof(config->mqtt_client_id), "lightnvr");
-    snprintf(config->mqtt_topic_prefix, sizeof(config->mqtt_topic_prefix), "lightnvr");
+    safe_strcpy(config->mqtt_client_id, "lightnvr", sizeof(config->mqtt_client_id), 0);
+    safe_strcpy(config->mqtt_topic_prefix, "lightnvr", sizeof(config->mqtt_topic_prefix), 0);
     config->mqtt_tls_enabled = false;           // No TLS by default
     config->mqtt_keepalive = 60;                // 60 seconds keepalive
     config->mqtt_qos = 1;                       // QoS 1 (at least once)
@@ -467,7 +467,7 @@ void load_default_config(config_t *config) {
 
     // Home Assistant MQTT auto-discovery settings
     config->mqtt_ha_discovery = false;          // Disabled by default
-    snprintf(config->mqtt_ha_discovery_prefix, sizeof(config->mqtt_ha_discovery_prefix), "homeassistant");
+    safe_strcpy(config->mqtt_ha_discovery_prefix, "homeassistant", sizeof(config->mqtt_ha_discovery_prefix), 0);
     config->mqtt_ha_snapshot_interval = 30;     // 30 seconds default
 }
 
@@ -1288,7 +1288,7 @@ int load_config(config_t *config) {
     // Set default web root if not specified
     if (strlen(config->web_root) == 0) {
         // Set a default web root path
-        snprintf(config->web_root, sizeof(config->web_root), "%s", "/var/www/lightnvr");  // or another appropriate default
+        safe_strcpy(config->web_root, "/var/www/lightnvr", sizeof(config->web_root), 0);  // or another appropriate default
     }
 
     // Add logging to debug

@@ -1,8 +1,3 @@
-#include "video/onvif_discovery_thread.h"
-#include "video/onvif_discovery_network.h"
-#include "video/onvif_discovery_probe.h"
-#include "video/onvif_discovery_response.h"
-#include "core/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +7,13 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <time.h>
+
+#include "video/onvif_discovery_thread.h"
+#include "video/onvif_discovery_network.h"
+#include "video/onvif_discovery_probe.h"
+#include "video/onvif_discovery_response.h"
+#include "core/logger.h"
+#include "utils/strings.h"
 
 // Maximum number of discovered devices
 #define MAX_DISCOVERED_DEVICES 32
@@ -53,7 +55,7 @@ void *discovery_thread_func(void *arg) {
         // Send discovery probes to all addresses in the range
         for (uint32_t ip = network + 1; ip < broadcast && thread_data->running; ip++) {
             addr.s_addr = htonl(ip);
-            snprintf(ip_addr, sizeof(ip_addr), "%s", inet_ntoa(addr));
+            safe_strcpy(ip_addr, inet_ntoa(addr), sizeof(ip_addr), 0);
             
             // Send discovery probe
             send_discovery_probe(ip_addr);
@@ -64,7 +66,7 @@ void *discovery_thread_func(void *arg) {
         
         // Send multiple probes to broadcast address
         addr.s_addr = htonl(broadcast);
-        snprintf(ip_addr, sizeof(ip_addr), "%s", inet_ntoa(addr));
+        safe_strcpy(ip_addr, inet_ntoa(addr), sizeof(ip_addr), 0);
         log_info("Sending multiple discovery probes to broadcast address: %s", ip_addr);
         
         for (int i = 0; i < 5; i++) {

@@ -180,15 +180,15 @@ static void add_versions_to_json(cJSON *info) {
         char os_version[256] = {0};
 
         if (read_os_release_value("PRETTY_NAME", pretty_name, sizeof(pretty_name))) {
-            snprintf(os_version, sizeof(os_version), "%s", pretty_name);
+            safe_strcpy(os_version, pretty_name, sizeof(os_version), 0);
         } else if (read_os_release_value("NAME", name, sizeof(name))) {
             if (read_os_release_value("VERSION_ID", version_id, sizeof(version_id))) {
                 snprintf(os_version, sizeof(os_version), "%s %s", name, version_id);
             } else {
-                snprintf(os_version, sizeof(os_version), "%s", name);
+                safe_strcpy(os_version, name, sizeof(os_version), 0);
             }
         } else {
-            snprintf(os_version, sizeof(os_version), "%s", system_info.sysname);
+            safe_strcpy(os_version, system_info.sysname, sizeof(os_version), 0);
         }
 
         snprintf(details, sizeof(details), "%s %s • %s",
@@ -224,7 +224,7 @@ static void add_versions_to_json(cJSON *info) {
             snprintf(curl_details, sizeof(curl_details), "%s • zlib %s",
                      curl_info->ssl_version, curl_info->libz_version);
         } else if (curl_info->ssl_version) {
-            snprintf(curl_details, sizeof(curl_details), "%s", curl_info->ssl_version);
+            safe_strcpy(curl_details, curl_info->ssl_version, sizeof(curl_details), 0);
         } else if (curl_info->libz_version) {
             snprintf(curl_details, sizeof(curl_details), "zlib %s", curl_info->libz_version);
         }
@@ -1254,7 +1254,7 @@ void handle_get_system_info(const http_request_t *req, http_response_t *res) {
         // Compute recordings directory size using native filesystem traversal.
         // storage_path is NEVER passed to a shell command (prevents injection).
         char recordings_dir[512];
-        snprintf(recordings_dir, sizeof(recordings_dir), "%s", g_config.storage_path);
+        safe_strcpy(recordings_dir, g_config.storage_path, sizeof(recordings_dir), 0);
         /* strip any trailing slash so lstat/opendir work consistently */
         size_t rd_len = strlen(recordings_dir);
         if (rd_len > 1 && recordings_dir[rd_len - 1] == '/')
