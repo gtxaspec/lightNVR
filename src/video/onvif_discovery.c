@@ -257,7 +257,7 @@ int discover_onvif_devices(const char *network, onvif_device_info_t *devices,
         }
 
         addr.s_addr = htonl(ip);
-        snprintf(ip_addr, sizeof(ip_addr), "%s", inet_ntoa(addr));
+        safe_strcpy(ip_addr, inet_ntoa(addr), sizeof(ip_addr), 0);
         
         // Check if port 3702 (ONVIF) or port 80 (HTTP) is open with a shorter timeout
         if (is_port_open(ip_addr, 3702, 25) || is_port_open(ip_addr, 80, 25)) {
@@ -309,7 +309,7 @@ int discover_onvif_devices(const char *network, onvif_device_info_t *devices,
 
         // Send probes to broadcast address
         addr.s_addr = htonl(broadcast);
-        snprintf(ip_addr, sizeof(ip_addr), "%s", inet_ntoa(addr));
+        safe_strcpy(ip_addr, inet_ntoa(addr), sizeof(ip_addr), 0);
         log_info("Sending discovery probes to broadcast address: %s", ip_addr);
 
         dest_addr.sin_addr.s_addr = htonl(broadcast);

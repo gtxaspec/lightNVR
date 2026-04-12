@@ -269,7 +269,7 @@ static void *zip_worker(void *arg) {
         /* Build entry name: stream_YYYY-MM-DDTHH-mm-ss.ext */
         const char *base = strrchr(rec.file_path, '/');
         base = base ? base+1 : rec.file_path;
-        snprintf(entries[entry_count].name, sizeof(entries[entry_count].name), "%s", base);
+        safe_strcpy(entries[entry_count].name, base, sizeof(entries[entry_count].name), 0);
 
         uint64_t fsize = 0;
         uint32_t crc   = crc32_of_file(rec.file_path, &fsize);

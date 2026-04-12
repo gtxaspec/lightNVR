@@ -2752,7 +2752,7 @@ int stop_hls_unified_stream(const char *stream_name) {
 
             // Store a local copy of the stream name for logging
             char writer_stream_name[MAX_STREAM_NAME];
-            snprintf(writer_stream_name, sizeof(writer_stream_name), "%s", stream_name); // Use the stream_name we already have
+            safe_strcpy(writer_stream_name, stream_name, sizeof(writer_stream_name), 0); // Use the stream_name we already have
 
             // Safely get and clear the writer pointer
             const hls_writer_t *writer_to_cleanup = NULL;

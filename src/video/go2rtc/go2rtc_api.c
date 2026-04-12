@@ -652,14 +652,14 @@ bool go2rtc_api_get_application_info(int *rtsp_port,
                 if (version && version_size > 0) {
                     cJSON *version_obj = cJSON_GetObjectItem(json, "version");
                     if (version_obj && cJSON_IsString(version_obj)) {
-                        snprintf(version, version_size, "%s", cJSON_GetStringValue(version_obj));
+                        safe_strcpy(version, cJSON_GetStringValue(version_obj), version_size, 0);
                     }
                 }
 
                 if (revision && revision_size > 0) {
                     cJSON *revision_obj = cJSON_GetObjectItem(json, "revision");
                     if (revision_obj && cJSON_IsString(revision_obj)) {
-                        snprintf(revision, revision_size, "%s", cJSON_GetStringValue(revision_obj));
+                        safe_strcpy(revision, cJSON_GetStringValue(revision_obj), revision_size, 0);
                     }
                 }
 

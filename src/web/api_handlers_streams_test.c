@@ -84,7 +84,7 @@ static int test_stream_connection(const char *url, int protocol,
     }
     
     if (video_stream_index == -1) {
-        snprintf(error_msg, error_msg_size, "No video stream found");
+        safe_strcpy(error_msg, "No video stream found", error_msg_size, 0);
         log_error("%s", error_msg);
         ret = -1;
         goto cleanup;
