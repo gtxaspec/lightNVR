@@ -1442,7 +1442,11 @@ void handle_post_system_backup(const http_request_t *req, http_response_t *res) 
     snprintf(backup_path, sizeof(backup_path), "%s/backups", g_config.web_root);
 
     // Create backups directory if it doesn't exist
-    ensure_dir(backup_path);
+    if (ensure_dir(backup_path)) {
+        log_error("Failed to create backup directory %s: %s", backup_path, strerror(errno));
+        http_response_set_json_error(res, 500, "Failed to create backup directory");
+        return;
+    }
 
     // Append filename to path
     snprintf(backup_path, sizeof(backup_path), "%s/backups/%s", g_config.web_root, backup_filename);

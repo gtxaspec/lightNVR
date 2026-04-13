@@ -507,7 +507,12 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
 
         snprintf(ctx->output_dir, sizeof(ctx->output_dir), "%s/%s",
                  global_cfg->storage_path, stream_path);
-        ensure_dir(ctx->output_dir);
+        if (ensure_dir(ctx->output_dir)) {
+            log_error("Failed to create output directory %s: %s", ctx->output_dir, strerror(errno));
+            free(ctx);
+            pthread_mutex_unlock(&contexts_mutex);
+            return -1;
+        }
     }
 
     // If using built-in motion detection, enable the motion stream now so that

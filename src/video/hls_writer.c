@@ -414,7 +414,7 @@ static int ensure_output_directory(hls_writer_t *writer) {
 
     // Create directory if necessary
     if (mkdir_recursive(safe_dir_path)) {
-        log_error("Failed to create HLS output directory");
+        log_error("Failed to create HLS output directory %s: %s", safe_dir_path, strerror(errno));
         return -1;
     }
 

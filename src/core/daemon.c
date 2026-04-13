@@ -198,6 +198,7 @@ static void daemon_signal_handler(int sig) {
 int write_pid_file(const char *pid_file) {
     // Make sure the directory exists
     if (ensure_path(pid_file) != 0) {
+        log_error("Failed to create PID file directory %s: %s", pid_file, strerror(errno));
         return -1;
     }
     

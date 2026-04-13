@@ -1,14 +1,12 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <libgen.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "core/path_utils.h"
@@ -38,14 +36,16 @@ int ensure_dir(const char *path) {
         if (!S_ISDIR(st.st_mode)) {
             // Path exists but is not a directory
             log_error("Regular file in the way of directory at %s", path);
-            return -1;
+            // Also set errno
+            errno = ENOTDIR;
+            return -ENOTDIR;
         }
-        // If path exists and is directory, fall through to update p
+        // If path exists and is directory, we're done
     } else {
         // Create this directory level
         if (mkdir(path, 0755) != 0 && errno != EEXIST) {
             log_error("Failed to create directory %s: %s", path, strerror(errno));
-            return -1;
+            return -errno;
         }
     }
 
@@ -56,9 +56,9 @@ int ensure_dir(const char *path) {
  * Create a directory recursively (like mkdir -p), internal implementation.
  * 
  * Will modify path in-place, but restores it before returning. Does not perform
- * input validation.
+ * input validation. Returns the negative error code if one is encountered.
  */
-int _mkdir_recursive(char *path) {
+static int _mkdir_recursive(char *path) {
     // Iterate through path components and create each directory
     char *p = path;
 
@@ -126,7 +126,7 @@ int mkdir_recursive(const char *path) {
  * Set permissions on a file or directory (like chmod). Sets fd_out if the
  * path is a directory for use in recursive chmod.
  */
-int _chmod_path(const char *path, mode_t mode, int *fd_out) {
+static int _chmod_path(const char *path, mode_t mode, int *fd_out) {
     // Open as a directory first (O_NOFOLLOW prevents following symlinks, eliminating
     // the TOCTOU race between the old lstat() check and chmod() on the same path).
     int fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
@@ -223,6 +223,13 @@ int chmod_recursive(const char *path, mode_t mode) {
     int result = 0;
 
     size_t offset = snprintf(full_path, sizeof(full_path), "%s/", path);
+    if (offset >= PATH_MAX) {
+        // If the path is already max length, we won't be able to append anything to
+        // it. In this case emit an error and return.
+        log_error("Path too long to recur for chmod");
+        close(fd);
+        return -1;
+    }
     char *path_ptr = full_path + offset;
 
     while ((entry = readdir(dir)) != NULL) {

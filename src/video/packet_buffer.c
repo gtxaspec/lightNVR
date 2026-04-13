@@ -265,7 +265,13 @@ packet_buffer_t* create_packet_buffer(const char *stream_name, int buffer_second
         if (config) {
             snprintf(buffer->disk_buffer_path, sizeof(buffer->disk_buffer_path),
                     "%s/.packet_buffer_%s", config->storage_path, stream_name);
-            ensure_dir(buffer->disk_buffer_path);
+            if (ensure_dir(buffer->disk_buffer_path)) {
+                log_error("Failed to create disk buffer directory %s: %s", buffer->disk_buffer_path, strerror(errno));
+                pthread_mutex_destroy(&buffer->mutex);
+                buffer->mutex_initialized = false;
+                pthread_mutex_unlock(&buffer_pool.pool_mutex);
+                return NULL;
+            }
         }
     }
 

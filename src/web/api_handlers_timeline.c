@@ -587,7 +587,10 @@ int create_timeline_manifest(const timeline_segment_t *segments, int segment_cou
     snprintf(temp_dir, sizeof(temp_dir), "%s/timeline_manifests", g_config.storage_path);
     
     // Create directory if it doesn't exist
-    ensure_dir(temp_dir);
+    if (ensure_dir(temp_dir)) {
+        log_error("Could not create directory for timeline manifest %s: %s", temp_dir, strerror(errno));
+        return -1;
+    }
     
     // Generate a unique manifest filename
     char manifest_filename[MAX_PATH_LENGTH];

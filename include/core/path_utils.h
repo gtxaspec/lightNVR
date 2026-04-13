@@ -2,7 +2,7 @@
 #define LIGHTNVR_PATH_UTILS_H
 
 #include <stddef.h>
-#include <fcntl.h>
+#include <sys/types.h>
 
 /**
  * Sanitize a stream name for use as a path or object name.
@@ -16,9 +16,10 @@ void sanitize_stream_name(const char *input, char *output, size_t output_size);
 
 /**
  * Ensure the specified directory exists, creating it if necessary. Does not recur.
+ * Sets errno on failure.
  *
  * @param path Directory path to create
- * @return 0 on success, -1 on error
+ * @return 0 on success, negative errno on error
  */
 int ensure_dir(const char *path);
 
