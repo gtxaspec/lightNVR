@@ -16,6 +16,7 @@
 
 #include "core/logger.h"
 #include "core/config.h"  // For MAX_PATH_LENGTH
+#include "utils/strings.h"
 #include "video/detection_result.h"
 #include "video/detection_model.h"
 #include "video/detection_model_internal.h"
@@ -264,13 +265,12 @@ detection_model_t load_sod_model(const char *model_path, float threshold) {
     }
 
     // Initialize model structure
-    strncpy(model->type, MODEL_TYPE_SOD, sizeof(model->type) - 1);
+    safe_strcpy(model->type, MODEL_TYPE_SOD, sizeof(model->type), 0);
     model->sod = sod_model;
     model->threshold = threshold;
 
     // Store the model path in the model structure
-    strncpy(model->path, model_path, MAX_PATH_LENGTH - 1);
-    model->path[MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
+    safe_strcpy(model->path, model_path, MAX_PATH_LENGTH, 0);
 
     log_info("SOD model loaded: %s with threshold %.2f", model_path, threshold);
     return model;
@@ -492,11 +492,10 @@ int detect_with_sod_model(detection_model_t model, const unsigned char *frame_da
 
         // Extra safety check for name string
         if (name && strlen(name) > 0) {
-            strncpy(label, name, MAX_LABEL_LENGTH - 1);
+            safe_strcpy(label, name, MAX_LABEL_LENGTH, 0);
         } else {
-            strncpy(label, "object", MAX_LABEL_LENGTH - 1);
+            safe_strcpy(label, "object", MAX_LABEL_LENGTH, 0);
         }
-        label[MAX_LABEL_LENGTH - 1] = '\0';
 
         // Clamp confidence to valid range [0.0, 1.0]
         float confidence = box->score;
@@ -523,7 +522,7 @@ int detect_with_sod_model(detection_model_t model, const unsigned char *frame_da
         }
 
         // Add valid detection to result
-        strncpy(result->detections[valid_count].label, label, MAX_LABEL_LENGTH - 1);
+        safe_strcpy(result->detections[valid_count].label, label, MAX_LABEL_LENGTH, 0);
         result->detections[valid_count].confidence = confidence;
         result->detections[valid_count].x = x;
         result->detections[valid_count].y = y;

@@ -18,6 +18,7 @@
 
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
 #include "video/stream_reader.h"
@@ -147,7 +148,7 @@ int start_detection_stream_reader(const char *stream_name, int detection_interva
     // Just store the detection configuration
     
     // Initialize detection stream
-    strncpy(detection_streams[slot].stream_name, stream_name, MAX_STREAM_NAME - 1);
+    safe_strcpy(detection_streams[slot].stream_name, stream_name, MAX_STREAM_NAME, 0);
     detection_streams[slot].detection_interval = detection_interval;
     detection_streams[slot].frame_counter = 0;
     

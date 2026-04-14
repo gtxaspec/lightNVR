@@ -12,6 +12,7 @@
 #include "database/db_events.h"
 #include "database/db_core.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 // Add an event to the database
 uint64_t add_event(event_type_t type, const char *stream_name, 
@@ -103,26 +104,25 @@ int get_events(time_t start_time, time_t end_time, int type,
     
     // Build query based on filters
     char sql[1024];
-    strncpy(sql, "SELECT id, type, timestamp, stream_name, description, details FROM events WHERE 1=1", sizeof(sql) - 1);
-    sql[sizeof(sql) - 1] = '\0';
+    safe_strcpy(sql, "SELECT id, type, timestamp, stream_name, description, details FROM events WHERE 1=1", sizeof(sql), 0);
     
     if (start_time > 0) {
-        strncat(sql, " AND timestamp >= ?", sizeof(sql) - strlen(sql) - 1);
+        safe_strcat(sql, " AND timestamp >= ?", sizeof(sql));
     }
 
     if (end_time > 0) {
-        strncat(sql, " AND timestamp <= ?", sizeof(sql) - strlen(sql) - 1);
+        safe_strcat(sql, " AND timestamp <= ?", sizeof(sql));
     }
 
     if (type >= 0) {
-        strncat(sql, " AND type = ?", sizeof(sql) - strlen(sql) - 1);
+        safe_strcat(sql, " AND type = ?", sizeof(sql));
     }
 
     if (stream_name) {
-        strncat(sql, " AND stream_name = ?", sizeof(sql) - strlen(sql) - 1);
+        safe_strcat(sql, " AND stream_name = ?", sizeof(sql));
     }
 
-    strncat(sql, " ORDER BY timestamp DESC LIMIT ?;", sizeof(sql) - strlen(sql) - 1);
+    safe_strcat(sql, " ORDER BY timestamp DESC LIMIT ?;", sizeof(sql));
     
     rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
@@ -160,24 +160,21 @@ int get_events(time_t start_time, time_t end_time, int type,
         
         const char *stream = (const char *)sqlite3_column_text(stmt, 3);
         if (stream) {
-            strncpy(events[count].stream_name, stream, sizeof(events[count].stream_name) - 1);
-            events[count].stream_name[sizeof(events[count].stream_name) - 1] = '\0';
+            safe_strcpy(events[count].stream_name, stream, sizeof(events[count].stream_name), 0);
         } else {
             events[count].stream_name[0] = '\0';
         }
         
         const char *desc = (const char *)sqlite3_column_text(stmt, 4);
         if (desc) {
-            strncpy(events[count].description, desc, sizeof(events[count].description) - 1);
-            events[count].description[sizeof(events[count].description) - 1] = '\0';
+            safe_strcpy(events[count].description, desc, sizeof(events[count].description), 0);
         } else {
             events[count].description[0] = '\0';
         }
         
         const char *details = (const char *)sqlite3_column_text(stmt, 5);
         if (details) {
-            strncpy(events[count].details, details, sizeof(events[count].details) - 1);
-            events[count].details[sizeof(events[count].details) - 1] = '\0';
+            safe_strcpy(events[count].details, details, sizeof(events[count].details), 0);
         } else {
             events[count].details[0] = '\0';
         }

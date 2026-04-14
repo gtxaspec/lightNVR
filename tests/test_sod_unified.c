@@ -5,6 +5,7 @@
 #include "video/sod_realnet.h"
 #include "video/sod_integration.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "sod/sod.h"
 
 /**
@@ -192,9 +193,9 @@ int main(int argc, char *argv[])
             if (cnn_boxes[i].score < 0.3) continue;
 
             // Copy detection data
-            strncpy(result.detections[result.count].label,
+            safe_strcpy(result.detections[result.count].label,
                     cnn_boxes[i].zName ? cnn_boxes[i].zName : "face",
-                    MAX_LABEL_LENGTH - 1);
+                    MAX_LABEL_LENGTH, 0);
 
             result.detections[result.count].confidence = cnn_boxes[i].score;
 

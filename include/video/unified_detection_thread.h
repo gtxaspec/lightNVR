@@ -96,6 +96,16 @@ typedef struct {
     // Audio recording configuration
     bool record_audio;  // Whether to include audio in recordings
 
+    // External motion trigger: set to 1 by unified_detection_notify_motion() when
+    // an ONVIF-managed master stream propagates its motion event to this UDT-managed
+    // slave stream (e.g. the PTZ lens on a TP-Link C545D that has no ONVIF profile).
+    // The UDT processing path checks this flag when handling eligible video
+    // keyframes and treats a rising edge as equivalent to a local detection
+    // event (starts/extends recording).
+    // Use atomic_store/atomic_load to avoid races between the event-processor thread
+    // (writer) and the UDT thread (reader/resetter).
+    atomic_int external_motion_trigger;  // 0 = idle, 1 = motion active, 2 = motion ended
+
     // Annotation-only mode: when true, detection runs but does NOT create separate MP4 files
     // Detections are stored in the database and linked to the continuous recording
     bool annotation_only;
@@ -234,6 +244,20 @@ int get_unified_detection_stats(const char *stream_name,
                                 uint64_t *packets_processed,
                                 uint64_t *detections,
                                 uint64_t *recordings);
+
+/**
+ * Notify a UDT-managed stream of an externally-detected motion event.
+ *
+ * Called by the ONVIF motion recording system when a master stream's ONVIF
+ * event must be propagated to a slave stream that is managed by a UDT
+ * (e.g. the PTZ lens on a dual-lens camera).  The UDT thread polls
+ * ctx->external_motion_trigger and reacts on the next packet boundary.
+ *
+ * @param stream_name   Name of the slave stream (must be running as a UDT)
+ * @param motion_active true  = motion started / ongoing
+ *                      false = motion ended
+ */
+void unified_detection_notify_motion(const char *stream_name, bool motion_active);
 
 #endif /* UNIFIED_DETECTION_THREAD_H */
 

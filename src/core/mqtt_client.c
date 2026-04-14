@@ -16,6 +16,7 @@
 #include "core/path_utils.h"
 #include "core/version.h"
 #include "database/db_streams.h"
+#include "utils/strings.h"
 #include "video/go2rtc/go2rtc_snapshot.h"
 
 #define MAX_TOPIC_LENGTH 512
@@ -758,7 +759,7 @@ void mqtt_set_motion_state(const char *stream_name, const detection_result_t *re
     if (!state && num_motion_states < MAX_MOTION_STREAMS) {
         state = &motion_states[num_motion_states++];
         memset(state, 0, sizeof(*state));
-        strncpy(state->stream_name, stream_name, sizeof(state->stream_name) - 1);
+        safe_strcpy(state->stream_name, stream_name, sizeof(state->stream_name), 0);
     }
 
     if (!state) {
@@ -792,8 +793,7 @@ void mqtt_set_motion_state(const char *stream_name, const detection_result_t *re
             }
             if (label_idx < 0 && state->num_labels < 32) {
                 label_idx = state->num_labels++;
-                strncpy(state->object_labels[label_idx], label,
-                        sizeof(state->object_labels[0]) - 1);
+                safe_strcpy(state->object_labels[label_idx], label, sizeof(state->object_labels[0]), 0);
             }
             if (label_idx >= 0) {
                 state->object_counts[label_idx]++;
@@ -920,8 +920,7 @@ static void *ha_motion_thread_func(void *arg) {
 
                 motion_states[i].motion_active = false;
                 char stream_name[256];
-                strncpy(stream_name, motion_states[i].stream_name, sizeof(stream_name) - 1);
-                stream_name[sizeof(stream_name) - 1] = '\0';
+                safe_strcpy(stream_name, motion_states[i].stream_name, sizeof(stream_name), 0);
 
                 char safe_name[256];
                 sanitize_stream_name(stream_name, safe_name, sizeof(safe_name));

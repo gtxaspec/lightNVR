@@ -1,6 +1,7 @@
 #include "database/db_motion_config.h"
 #include "database/db_core.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 #include <sqlite3.h>
 #include <string.h>
 #include <time.h>
@@ -104,14 +105,12 @@ int load_motion_config(const char *stream_name, motion_recording_config_t *confi
 
         const char *codec = (const char *)sqlite3_column_text(stmt, 4);
         if (codec) {
-            strncpy(config->codec, codec, sizeof(config->codec) - 1);
-            config->codec[sizeof(config->codec) - 1] = '\0';
+            safe_strcpy(config->codec, codec, sizeof(config->codec), 0);
         }
 
         const char *quality = (const char *)sqlite3_column_text(stmt, 5);
         if (quality) {
-            strncpy(config->quality, quality, sizeof(config->quality) - 1);
-            config->quality[sizeof(config->quality) - 1] = '\0';
+            safe_strcpy(config->quality, quality, sizeof(config->quality), 0);
         }
 
         config->retention_days = sqlite3_column_int(stmt, 6);
@@ -207,8 +206,7 @@ int load_all_motion_configs(motion_recording_config_t *configs, char stream_name
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW && count < max_count) {
         const char *stream_name = (const char *)sqlite3_column_text(stmt, 0);
         if (stream_name) {
-            strncpy(stream_names[count], stream_name, 255);
-            stream_names[count][255] = '\0';
+            safe_strcpy(stream_names[count], stream_name, 256, 0);
 
             configs[count].enabled = sqlite3_column_int(stmt, 1) != 0;
             configs[count].pre_buffer_seconds = sqlite3_column_int(stmt, 2);
@@ -217,14 +215,12 @@ int load_all_motion_configs(motion_recording_config_t *configs, char stream_name
 
             const char *codec = (const char *)sqlite3_column_text(stmt, 5);
             if (codec) {
-                strncpy(configs[count].codec, codec, sizeof(configs[count].codec) - 1);
-                configs[count].codec[sizeof(configs[count].codec) - 1] = '\0';
+                safe_strcpy(configs[count].codec, codec, sizeof(configs[count].codec), 0);
             }
 
             const char *quality = (const char *)sqlite3_column_text(stmt, 6);
             if (quality) {
-                strncpy(configs[count].quality, quality, sizeof(configs[count].quality) - 1);
-                configs[count].quality[sizeof(configs[count].quality) - 1] = '\0';
+                safe_strcpy(configs[count].quality, quality, sizeof(configs[count].quality), 0);
             }
 
             configs[count].retention_days = sqlite3_column_int(stmt, 7);
@@ -435,7 +431,7 @@ int get_motion_recording_db_stats(const char *stream_name,
 int get_motion_recordings_list(const char *stream_name,
                                time_t start_time,
                                time_t end_time,
-                               char paths[][512],
+                               char paths[][MAX_PATH_LENGTH],
                                time_t *timestamps,
                                uint64_t *sizes,
                                int max_count) {
@@ -487,8 +483,7 @@ int get_motion_recordings_list(const char *stream_name,
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW && count < max_count) {
         const char *file_path = (const char *)sqlite3_column_text(stmt, 0);
         if (file_path) {
-            strncpy(paths[count], file_path, 511);
-            paths[count][511] = '\0';
+            safe_strcpy(paths[count], file_path, MAX_PATH_LENGTH, 0);
             timestamps[count] = sqlite3_column_int64(stmt, 1);
             sizes[count] = sqlite3_column_int64(stmt, 2);
             count++;

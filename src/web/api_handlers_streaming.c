@@ -10,6 +10,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/path_utils.h"
+#include "utils/strings.h"
 #include "web/http_server.h"
 #include "video/streams.h"
 
@@ -56,16 +57,11 @@ void handle_direct_hls_request(const http_request_t *req, http_response_t *res) 
         return;
     }
 
-    if (name_len >= MAX_STREAM_NAME) {
-        name_len = MAX_STREAM_NAME - 1;
-    }
+    char encoded_stream_name[MAX_STREAM_NAME];
+    char stream_name[MAX_STREAM_NAME];
+    char stream_path[MAX_STREAM_NAME];
 
-    char encoded_stream_name[MAX_STREAM_NAME] = {0};
-    char stream_name[MAX_STREAM_NAME] = {0};
-    char stream_path[MAX_STREAM_NAME] = {0};
-
-    strncpy(encoded_stream_name, stream_start, name_len);
-    encoded_stream_name[name_len] = '\0';
+    safe_strcpy(encoded_stream_name, stream_start, MAX_STREAM_NAME, name_len);
 
     // URL decode the stream name
     url_decode(encoded_stream_name, stream_name, MAX_STREAM_NAME);
@@ -90,15 +86,13 @@ void handle_direct_hls_request(const http_request_t *req, http_response_t *res) 
     }
 
     // Make local copies of the storage paths to avoid race conditions
-    char storage_path[MAX_PATH_LENGTH] = {0};
-    char storage_path_hls[MAX_PATH_LENGTH] = {0};
+    char storage_path[MAX_PATH_LENGTH];
+    char storage_path_hls[MAX_PATH_LENGTH];
 
     // Copy the storage paths with bounds checking
-    strncpy(storage_path, global_config->storage_path, MAX_PATH_LENGTH - 1);
-    storage_path[MAX_PATH_LENGTH - 1] = '\0';
+    safe_strcpy(storage_path, global_config->storage_path, MAX_PATH_LENGTH, 0);
 
-    strncpy(storage_path_hls, global_config->storage_path_hls, MAX_PATH_LENGTH - 1);
-    storage_path_hls[MAX_PATH_LENGTH - 1] = '\0';
+    safe_strcpy(storage_path_hls, global_config->storage_path_hls, MAX_PATH_LENGTH, 0);
 
     // Construct the full path to the HLS file
     char hls_file_path[MAX_PATH_LENGTH * 2]; // Double the buffer size to avoid truncation
@@ -166,8 +160,8 @@ void handle_direct_hls_request(const http_request_t *req, http_response_t *res) 
             // parse the JSON as m3u8 and fails). With a valid empty playlist, HLS.js will
             // simply retry the manifest load after its configured retry delay (non-fatal).
             res->status_code = 200;
-            strncpy(res->content_type, "application/vnd.apple.mpegurl",
-                    sizeof(res->content_type) - 1);
+            safe_strcpy(res->content_type, "application/vnd.apple.mpegurl",
+                    sizeof(res->content_type), 0);
             http_response_add_header(res, "Cache-Control", "no-cache, no-store, must-revalidate");
             http_response_add_header(res, "Access-Control-Allow-Origin", "*");
             http_response_set_body(res,

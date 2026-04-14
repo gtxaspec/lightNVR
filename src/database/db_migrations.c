@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <limits.h>
 
 #include "database/db_migrations.h"
 #include "database/sqlite_migrate.h"
@@ -71,7 +72,7 @@ static const char *find_migrations_dir(void) {
     }
 
     // Try relative to executable
-    char exe_path[256];
+    char exe_path[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (len > 0) {
         exe_path[len] = '\0';
@@ -79,7 +80,7 @@ static const char *find_migrations_dir(void) {
         char *last_slash = strrchr(exe_path, '/');
         if (last_slash) {
             *last_slash = '\0';
-            static char migrations_path[512] = {0};
+            static char migrations_path[PATH_MAX];
             snprintf(migrations_path, sizeof(migrations_path),
                      "%s/../share/lightnvr/migrations", exe_path);
             if (access(migrations_path, R_OK) == 0) {

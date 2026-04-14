@@ -7,6 +7,7 @@
 #include "video/stream_state.h"
 #include "video/stream_state_adapter.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 // Mapping between old stream handles and new state managers
 typedef struct {
@@ -258,8 +259,7 @@ int remove_stream_adapter(stream_handle_t handle) {
     
     // Save stream name for logging
     char stream_name[MAX_STREAM_NAME];
-    strncpy(stream_name, state->name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, state->name, MAX_STREAM_NAME, 0);
     
     // Remove mapping
     remove_handle_mapping_by_handle(handle);
@@ -457,8 +457,7 @@ int set_stream_detection_recording_adapter(stream_handle_t handle, bool enable, 
         memcpy(&updated_config, &state->config, sizeof(stream_config_t));
         pthread_mutex_unlock(&state->mutex);
         
-        strncpy(updated_config.detection_model, model_path, MAX_PATH_LENGTH - 1);
-        updated_config.detection_model[MAX_PATH_LENGTH - 1] = '\0';
+        safe_strcpy(updated_config.detection_model, model_path, MAX_PATH_LENGTH, 0);
         
         update_stream_state_config(state, &updated_config);
     }

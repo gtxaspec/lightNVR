@@ -26,6 +26,7 @@
 #include "video/onvif_motion_recording.h"
 #include "core/config.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 #define TEST_DB_PATH "/tmp/lightnvr_unit_cross_stream_trigger_test.db"
 
@@ -36,9 +37,9 @@ extern config_t g_config;
 static stream_config_t make_stream(const char *name, bool enabled) {
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, name, sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://localhost/stream", sizeof(s.url) - 1);
-    strncpy(s.codec, "h264", sizeof(s.codec) - 1);
+    safe_strcpy(s.name, name, sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://localhost/stream", sizeof(s.url), 0);
+    safe_strcpy(s.codec, "h264", sizeof(s.codec), 0);
     s.enabled  = enabled;
     s.width    = 1920;
     s.height   = 1080;
@@ -50,7 +51,7 @@ static stream_config_t make_stream(const char *name, bool enabled) {
     s.detection_interval  = 10;
     s.pre_detection_buffer  = 5;
     s.post_detection_buffer = 10;
-    strncpy(s.detection_object_filter, "none", sizeof(s.detection_object_filter) - 1);
+    safe_strcpy(s.detection_object_filter, "none", sizeof(s.detection_object_filter), 0);
     s.tier_critical_multiplier  = 3.0;
     s.tier_important_multiplier = 2.0;
     s.tier_ephemeral_multiplier = 0.25;
@@ -109,7 +110,7 @@ void test_process_motion_event_propagates_to_linked_stream(void) {
 
     /* Add PTZ stream slaved to cam_fixed */
     stream_config_t ptz = make_stream("cam_ptz", true);
-    strncpy(ptz.motion_trigger_source, "cam_fixed", sizeof(ptz.motion_trigger_source) - 1);
+    safe_strcpy(ptz.motion_trigger_source, "cam_fixed", sizeof(ptz.motion_trigger_source), 0);
     add_stream_config(&ptz);
 
     /* Trigger a motion-start event on the source stream */
@@ -130,7 +131,7 @@ void test_process_motion_event_end_propagates_to_linked_stream(void) {
     add_stream_config(&fixed);
 
     stream_config_t ptz = make_stream("cam_ptz_end", true);
-    strncpy(ptz.motion_trigger_source, "cam_fixed_end", sizeof(ptz.motion_trigger_source) - 1);
+    safe_strcpy(ptz.motion_trigger_source, "cam_fixed_end", sizeof(ptz.motion_trigger_source), 0);
     add_stream_config(&ptz);
 
     /* Trigger motion-end */
@@ -149,7 +150,7 @@ void test_process_motion_event_end_propagates_to_linked_stream(void) {
 void test_process_motion_event_unregistered_source_no_crash(void) {
     /* Add a PTZ stream that lists a source not being called */
     stream_config_t ptz = make_stream("cam_ptz_orphan", true);
-    strncpy(ptz.motion_trigger_source, "cam_ghost", sizeof(ptz.motion_trigger_source) - 1);
+    safe_strcpy(ptz.motion_trigger_source, "cam_ghost", sizeof(ptz.motion_trigger_source), 0);
     add_stream_config(&ptz);
 
     /* Call for a totally different source — no linked streams should match */

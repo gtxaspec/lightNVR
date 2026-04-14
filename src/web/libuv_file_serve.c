@@ -20,6 +20,7 @@
 #include "web/libuv_connection.h"
 #define LOG_COMPONENT "HTTP"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 // Forward declaration for response helper defined in libuv_response.c
 extern int libuv_send_response_ex(libuv_connection_t *conn, const http_response_t *response,
@@ -145,16 +146,15 @@ int libuv_serve_file(libuv_connection_t *conn, const char *path,
     
     // Set content type
     if (content_type) {
-        strncpy(ctx->content_type, content_type, sizeof(ctx->content_type) - 1);
+        safe_strcpy(ctx->content_type, content_type, sizeof(ctx->content_type), 0);
     } else {
-        strncpy(ctx->content_type, libuv_get_mime_type(path),
-                sizeof(ctx->content_type) - 1);
+        safe_strcpy(ctx->content_type, libuv_get_mime_type(path),
+                sizeof(ctx->content_type), 0);
     }
 
     // Store extra headers (CORS, Cache-Control, etc.)
     if (extra_headers) {
-        strncpy(ctx->extra_headers, extra_headers, sizeof(ctx->extra_headers) - 1);
-        ctx->extra_headers[sizeof(ctx->extra_headers) - 1] = '\0';
+        safe_strcpy(ctx->extra_headers, extra_headers, sizeof(ctx->extra_headers), 0);
     }
     
     // Check for Range header

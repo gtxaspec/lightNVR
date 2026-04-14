@@ -14,6 +14,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
+#include "utils/strings.h"
 #include "video/onvif_discovery.h"
 #include "video/stream_manager.h"
 #include <cjson/cJSON.h>
@@ -265,17 +266,14 @@ void handle_get_onvif_device_profiles(const http_request_t *req, http_response_t
     char username[64] = {0};
     char password[64] = {0};
 
-    strncpy(device_url, device_url_param, sizeof(device_url) - 1);
-    device_url[sizeof(device_url) - 1] = '\0';
+    safe_strcpy(device_url, device_url_param, sizeof(device_url), 0);
 
     if (username_param) {
-        strncpy(username, username_param, sizeof(username) - 1);
-        username[sizeof(username) - 1] = '\0';
+        safe_strcpy(username, username_param, sizeof(username), 0);
     }
 
     if (password_param) {
-        strncpy(password, password_param, sizeof(password) - 1);
-        password[sizeof(password) - 1] = '\0';
+        safe_strcpy(password, password_param, sizeof(password), 0);
     }
 
     // Get device profiles
@@ -323,12 +321,10 @@ void handle_get_onvif_device_profiles(const http_request_t *req, http_response_t
         char safe_stream_uri[MAX_URL_LENGTH];
 
         if (url_strip_credentials(profiles[i].snapshot_uri, safe_snapshot_uri, sizeof(safe_snapshot_uri)) != 0) {
-            strncpy(safe_snapshot_uri, profiles[i].snapshot_uri, sizeof(safe_snapshot_uri) - 1);
-            safe_snapshot_uri[sizeof(safe_snapshot_uri) - 1] = '\0';
+            safe_strcpy(safe_snapshot_uri, profiles[i].snapshot_uri, sizeof(safe_snapshot_uri), 0);
         }
         if (url_strip_credentials(profiles[i].stream_uri, safe_stream_uri, sizeof(safe_stream_uri)) != 0) {
-            strncpy(safe_stream_uri, profiles[i].stream_uri, sizeof(safe_stream_uri) - 1);
-            safe_stream_uri[sizeof(safe_stream_uri) - 1] = '\0';
+            safe_strcpy(safe_stream_uri, profiles[i].stream_uri, sizeof(safe_stream_uri), 0);
         }
 
         cJSON_AddStringToObject(profile, "snapshot_uri", safe_snapshot_uri);
@@ -435,7 +431,7 @@ void handle_post_add_onvif_device_as_stream(const http_request_t *req, http_resp
     // Create device info
     onvif_device_info_t device_info;
     memset(&device_info, 0, sizeof(device_info));
-    strncpy(device_info.device_service, device_url, sizeof(device_info.device_service) - 1);
+    safe_strcpy(device_info.device_service, device_url, sizeof(device_info.device_service), 0);
 
     // Add ONVIF device as stream
     int result = add_onvif_device_as_stream(&device_info, profile, username, password, stream_name);

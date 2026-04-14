@@ -22,6 +22,7 @@
 #include <sqlite3.h>
 
 #include "unity.h"
+#include "utils/strings.h"
 #include "database/db_core.h"
 #include "database/db_recordings.h"
 #include "database/db_recordings_sync.h"
@@ -35,10 +36,10 @@ static recording_metadata_t make_zero_size_rec(const char *stream,
                                                time_t start) {
     recording_metadata_t m;
     memset(&m, 0, sizeof(m));
-    strncpy(m.stream_name, stream, sizeof(m.stream_name) - 1);
-    strncpy(m.file_path,   path,   sizeof(m.file_path)   - 1);
-    strncpy(m.codec,       "h264", sizeof(m.codec)       - 1);
-    strncpy(m.trigger_type, "scheduled", sizeof(m.trigger_type) - 1);
+    safe_strcpy(m.stream_name, stream, sizeof(m.stream_name), 0);
+    safe_strcpy(m.file_path,   path,   sizeof(m.file_path),   0);
+    safe_strcpy(m.codec,       "h264", sizeof(m.codec),       0);
+    safe_strcpy(m.trigger_type, "scheduled", sizeof(m.trigger_type), 0);
     m.start_time  = start;
     m.end_time    = start + 60;
     m.size_bytes  = 0;        /* <-- needs sync */

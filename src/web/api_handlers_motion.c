@@ -13,6 +13,7 @@
 #define LOG_COMPONENT "MotionAPI"
 #include "core/logger.h"
 #include "database/db_motion_config.h"
+#include "utils/strings.h"
 #include "video/onvif_motion_recording.h"
 #include "video/motion_storage_manager.h"
 #include <cjson/cJSON.h>
@@ -119,16 +120,16 @@ void handle_post_motion_config(const http_request_t *req, http_response_t *res) 
 
     cJSON *codec = cJSON_GetObjectItem(json, "codec");
     if (codec && cJSON_IsString(codec)) {
-        strncpy(config.codec, codec->valuestring, sizeof(config.codec) - 1);
+        safe_strcpy(config.codec, codec->valuestring, sizeof(config.codec), 0);
     } else {
-        strncpy(config.codec, "h264", sizeof(config.codec) - 1);
+        safe_strcpy(config.codec, "h264", sizeof(config.codec), 0);
     }
 
     cJSON *quality = cJSON_GetObjectItem(json, "quality");
     if (quality && cJSON_IsString(quality)) {
-        strncpy(config.quality, quality->valuestring, sizeof(config.quality) - 1);
+        safe_strcpy(config.quality, quality->valuestring, sizeof(config.quality), 0);
     } else {
-        strncpy(config.quality, "medium", sizeof(config.quality) - 1);
+        safe_strcpy(config.quality, "medium", sizeof(config.quality), 0);
     }
 
     cJSON *retention = cJSON_GetObjectItem(json, "retention_days");

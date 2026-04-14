@@ -45,6 +45,7 @@
 #include "core/url_utils.h"
 #include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
 #include "telemetry/stream_metrics.h"
 
 // MEMORY LEAK FIX: Forward declaration for FFmpeg buffer cleanup function
@@ -660,12 +661,11 @@ static void safe_cleanup_resources(AVFormatContext **input_ctx, AVPacket **pkt, 
 
                 if (writer_valid) {
                     // Get a copy of the stream name for logging
-                    char writer_stream_name[MAX_STREAM_NAME] = {0};
+                    char writer_stream_name[MAX_STREAM_NAME];
                     if (writer_to_free->stream_name) {
-                        strncpy(writer_stream_name, writer_to_free->stream_name, MAX_STREAM_NAME - 1);
-                        writer_stream_name[MAX_STREAM_NAME - 1] = '\0';
+                        safe_strcpy(writer_stream_name, writer_to_free->stream_name, MAX_STREAM_NAME, 0);
                     } else {
-                        strcpy(writer_stream_name, "unknown");
+                        safe_strcpy(writer_stream_name, "unknown", MAX_STREAM_NAME, 0);
                     }
 
                     log_debug("Preparing to close HLS writer for stream %s", writer_stream_name);
@@ -941,8 +941,7 @@ void *hls_unified_thread_func(void *arg) {
 
     // Create a local copy of the stream name for thread safety
     char stream_name[MAX_STREAM_NAME];
-    strncpy(stream_name, ctx->stream_name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, ctx->stream_name, MAX_STREAM_NAME, 0);
 
     log_set_thread_context("HLSWriter", stream_name);
     log_info("Starting unified HLS thread for stream %s", stream_name);
@@ -1132,8 +1131,7 @@ void *hls_unified_thread_func(void *arg) {
 
                 // Copy the URL and protocol with safety checks
                 if (ctx && ctx->rtsp_url[0] != '\0') {
-                    strncpy(local_rtsp_url, ctx->rtsp_url, MAX_PATH_LENGTH - 1);
-                    local_rtsp_url[MAX_PATH_LENGTH - 1] = '\0';
+                    safe_strcpy(local_rtsp_url, ctx->rtsp_url, MAX_PATH_LENGTH, 0);
                     local_protocol = ctx->protocol;
                 } else {
                     log_error("Invalid RTSP URL for stream %s", stream_name);
@@ -1560,8 +1558,7 @@ void *hls_unified_thread_func(void *arg) {
 
                 // Copy the URL and protocol with safety checks
                 if (ctx && ctx->rtsp_url[0] != '\0') {
-                    strncpy(reconnect_rtsp_url, ctx->rtsp_url, MAX_PATH_LENGTH - 1);
-                    reconnect_rtsp_url[MAX_PATH_LENGTH - 1] = '\0';
+                    safe_strcpy(reconnect_rtsp_url, ctx->rtsp_url, MAX_PATH_LENGTH, 0);
                     reconnect_protocol = ctx->protocol;
                 } else {
                     log_error("Invalid RTSP URL for stream %s during reconnection", stream_name);
@@ -1797,9 +1794,8 @@ void *hls_unified_thread_func(void *arg) {
     bool context_valid_for_exit = ctx_for_exit && !is_context_already_freed(ctx_for_exit) && !is_context_pending_deletion(ctx_for_exit);
 
     // Store stream name in local buffer for logging even if context becomes invalid
-    char stream_name_buf[MAX_STREAM_NAME] = {0};
-    strncpy(stream_name_buf, stream_name, MAX_STREAM_NAME - 1);
-    stream_name_buf[MAX_STREAM_NAME - 1] = '\0';
+    char stream_name_buf[MAX_STREAM_NAME];
+    safe_strcpy(stream_name_buf, stream_name, MAX_STREAM_NAME, 0);
 
     // CRITICAL FIX: Ensure all resources are cleaned up before exiting
     // This is a safety measure in case we exited the loop without proper cleanup
@@ -1941,9 +1937,8 @@ void *hls_unified_thread_func(void *arg) {
 
             // CRITICAL FIX: Store a local copy of the stream name for logging
             if (writer_to_cleanup && writer_to_cleanup->stream_name) {
-                char writer_stream_name[MAX_STREAM_NAME] = {0};
-                strncpy(writer_stream_name, writer_to_cleanup->stream_name, MAX_STREAM_NAME - 1);
-                writer_stream_name[MAX_STREAM_NAME - 1] = '\0';
+                char writer_stream_name[MAX_STREAM_NAME];
+                safe_strcpy(writer_stream_name, writer_to_cleanup->stream_name, MAX_STREAM_NAME, 0);
                 log_info("Preparing to clean up HLS writer for stream %s", writer_stream_name);
             }
         }
@@ -2338,13 +2333,11 @@ int start_hls_unified_stream(const char *stream_name) {
 
     // Initialize the memory to zero
     memset(ctx, 0, sizeof(hls_unified_thread_ctx_t));
-    strncpy(ctx->stream_name, stream_name, MAX_STREAM_NAME - 1);
-    ctx->stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(ctx->stream_name, stream_name, MAX_STREAM_NAME, 0);
 
     // Get RTSP URL
     char actual_url[MAX_PATH_LENGTH];
-    strncpy(actual_url, config.url, sizeof(actual_url) - 1);
-    actual_url[sizeof(actual_url) - 1] = '\0';
+    safe_strcpy(actual_url, config.url, sizeof(actual_url), 0);
 
     // If the stream is using go2rtc for HLS, get the go2rtc RTSP URL
     if (go2rtc_integration_is_using_go2rtc_for_hls(stream_name)) {
@@ -2385,7 +2378,7 @@ int start_hls_unified_stream(const char *stream_name) {
             const char *suffix = "?video";
             size_t suffix_len = strlen(suffix);
             if (url_len + suffix_len < sizeof(actual_url)) {
-                strncat(actual_url, suffix, sizeof(actual_url) - url_len - 1);
+                safe_strcat(actual_url, suffix, sizeof(actual_url));
                 log_info("Audio recording disabled for %s, using video-only go2rtc RTSP URL for HLS",
                          stream_name);
             } else {
@@ -2403,14 +2396,12 @@ int start_hls_unified_stream(const char *stream_name) {
                                   config.onvif_username[0] ? config.onvif_username : NULL,
                                   config.onvif_password[0] ? config.onvif_password : NULL,
                                   credentialed_url, sizeof(credentialed_url)) == 0) {
-            strncpy(actual_url, credentialed_url, sizeof(actual_url) - 1);
-            actual_url[sizeof(actual_url) - 1] = '\0';
+            safe_strcpy(actual_url, credentialed_url, sizeof(actual_url), 0);
         }
     }
 
     // Copy the URL to the context
-    strncpy(ctx->rtsp_url, actual_url, MAX_PATH_LENGTH - 1);
-    ctx->rtsp_url[MAX_PATH_LENGTH - 1] = '\0';
+    safe_strcpy(ctx->rtsp_url, actual_url, MAX_PATH_LENGTH, 0);
 
     // Set protocol information in the context
     ctx->protocol = config.protocol;
@@ -2452,13 +2443,12 @@ int start_hls_unified_stream(const char *stream_name) {
 
         // Create parent directories one by one
         char temp_path[MAX_PATH_LENGTH];
-        strncpy(temp_path, ctx->output_path, MAX_PATH_LENGTH - 1);
-        temp_path[MAX_PATH_LENGTH - 1] = '\0';
+        safe_strcpy(temp_path, ctx->output_path, MAX_PATH_LENGTH, 0);
 
         for (char *p = temp_path + 1; *p; p++) {
             if (*p == '/') {
                 *p = '\0';
-                if (mkdir(temp_path, 0777) != 0 && errno != EEXIST) {
+                if (ensure_dir(temp_path)) {
                     log_warn("Failed to create parent directory: %s (error: %s)", temp_path, strerror(errno));
                 }
                 *p = '/';
@@ -2466,7 +2456,7 @@ int start_hls_unified_stream(const char *stream_name) {
         }
 
         // Create the final directory
-        if (mkdir(temp_path, 0777) != 0 && errno != EEXIST) {
+        if (ensure_dir(temp_path)) {
             log_error("Failed to create output directory: %s (error: %s)", temp_path, strerror(errno));
             hls_guarded_free(ctx);
             return -1;
@@ -2491,7 +2481,7 @@ int start_hls_unified_stream(const char *stream_name) {
 
     // Create parent directory if it doesn't exist
     if (stat(parent_dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        if (mkdir(parent_dir, 0777) != 0 && errno != EEXIST) {
+        if (ensure_dir(parent_dir)) {
             log_warn("Failed to create parent HLS directory: %s (error: %s)", parent_dir, strerror(errno));
         }
     }
@@ -2761,8 +2751,8 @@ int stop_hls_unified_stream(const char *stream_name) {
             alarm(1); // 1 second timeout
 
             // Store a local copy of the stream name for logging
-            char writer_stream_name[MAX_STREAM_NAME] = {0};
-            snprintf(writer_stream_name, sizeof(writer_stream_name), "%s", stream_name); // Use the stream_name we already have
+            char writer_stream_name[MAX_STREAM_NAME];
+            safe_strcpy(writer_stream_name, stream_name, sizeof(writer_stream_name), 0); // Use the stream_name we already have
 
             // Safely get and clear the writer pointer
             const hls_writer_t *writer_to_cleanup = NULL;
@@ -3323,8 +3313,7 @@ static void *hls_watchdog_thread_func(void *arg) {
 
                 // Store the stream name before unlocking the mutex
                 char stream_name[MAX_STREAM_NAME];
-                strncpy(stream_name, ctx->stream_name, MAX_STREAM_NAME - 1);
-                stream_name[MAX_STREAM_NAME - 1] = '\0';
+                safe_strcpy(stream_name, ctx->stream_name, MAX_STREAM_NAME, 0);
 
                 // Unlock the mutex before restarting the stream
                 pthread_mutex_unlock(&unified_contexts_mutex);

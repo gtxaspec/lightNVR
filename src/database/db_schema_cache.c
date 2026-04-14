@@ -9,6 +9,7 @@
 #include "database/db_schema_utils.h"
 #include "database/db_core.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 // Cache for column existence to avoid repeated database queries
 typedef struct {
@@ -57,30 +58,30 @@ void init_schema_cache(void) {
 
         // Add them to the cache manually
         if (column_cache_size < column_cache_capacity) {
-            strncpy(column_cache[column_cache_size].table_name, "streams", sizeof(column_cache[column_cache_size].table_name) - 1);
-            strncpy(column_cache[column_cache_size].column_name, "detection_based_recording", sizeof(column_cache[column_cache_size].column_name) - 1);
+            safe_strcpy(column_cache[column_cache_size].table_name, "streams", sizeof(column_cache[column_cache_size].table_name), 0);
+            safe_strcpy(column_cache[column_cache_size].column_name, "detection_based_recording", sizeof(column_cache[column_cache_size].column_name), 0);
             column_cache[column_cache_size].exists = detection_exists;
             column_cache_size++;
         }
 
         if (column_cache_size < column_cache_capacity) {
-            strncpy(column_cache[column_cache_size].table_name, "streams", sizeof(column_cache[column_cache_size].table_name) - 1);
-            strncpy(column_cache[column_cache_size].column_name, "protocol", sizeof(column_cache[column_cache_size].column_name) - 1);
+            safe_strcpy(column_cache[column_cache_size].table_name, "streams", sizeof(column_cache[column_cache_size].table_name), 0);
+            safe_strcpy(column_cache[column_cache_size].column_name, "protocol", sizeof(column_cache[column_cache_size].column_name), 0);
             column_cache[column_cache_size].exists = protocol_exists;
             column_cache_size++;
         }
 
         if (column_cache_size < column_cache_capacity) {
-            strncpy(column_cache[column_cache_size].table_name, "streams", sizeof(column_cache[column_cache_size].table_name) - 1);
-            strncpy(column_cache[column_cache_size].column_name, "is_onvif", sizeof(column_cache[column_cache_size].column_name) - 1);
+            safe_strcpy(column_cache[column_cache_size].table_name, "streams", sizeof(column_cache[column_cache_size].table_name), 0);
+            safe_strcpy(column_cache[column_cache_size].column_name, "is_onvif", sizeof(column_cache[column_cache_size].column_name), 0);
             column_cache[column_cache_size].exists = onvif_exists;
             column_cache_size++;
         }
 
         // Add record_audio column to cache
         if (column_cache_size < column_cache_capacity) {
-            strncpy(column_cache[column_cache_size].table_name, "streams", sizeof(column_cache[column_cache_size].table_name) - 1);
-            strncpy(column_cache[column_cache_size].column_name, "record_audio", sizeof(column_cache[column_cache_size].column_name) - 1);
+            safe_strcpy(column_cache[column_cache_size].table_name, "streams", sizeof(column_cache[column_cache_size].table_name), 0);
+            safe_strcpy(column_cache[column_cache_size].column_name, "record_audio", sizeof(column_cache[column_cache_size].column_name), 0);
             column_cache[column_cache_size].exists = record_audio_exists;
             column_cache_size++;
         }
@@ -147,11 +148,9 @@ bool cached_column_exists(const char *table_name, const char *column_name) {
     }
 
     // Add the new entry
-    strncpy(column_cache[column_cache_size].table_name, table_name, sizeof(column_cache[column_cache_size].table_name) - 1);
-    column_cache[column_cache_size].table_name[sizeof(column_cache[column_cache_size].table_name) - 1] = '\0';
+    safe_strcpy(column_cache[column_cache_size].table_name, table_name, sizeof(column_cache[column_cache_size].table_name), 0);
 
-    strncpy(column_cache[column_cache_size].column_name, column_name, sizeof(column_cache[column_cache_size].column_name) - 1);
-    column_cache[column_cache_size].column_name[sizeof(column_cache[column_cache_size].column_name) - 1] = '\0';
+    safe_strcpy(column_cache[column_cache_size].column_name, column_name, sizeof(column_cache[column_cache_size].column_name), 0);
 
     column_cache[column_cache_size].exists = exists;
     column_cache_size++;

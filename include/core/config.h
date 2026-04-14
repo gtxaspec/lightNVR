@@ -127,7 +127,7 @@ typedef struct {
 
     // New recording format options
     bool record_mp4_directly;        // Record directly to MP4 alongside HLS
-    char mp4_storage_path[256];      // Path for MP4 recordings storage
+    char mp4_storage_path[MAX_PATH_LENGTH];      // Path for MP4 recordings storage
     int mp4_segment_duration;        // Duration of each MP4 segment in seconds
     int mp4_retention_days;          // Number of days to keep MP4 recordings
     
@@ -153,6 +153,7 @@ typedef struct {
     // Web server settings
     int web_thread_pool_size; // libuv UV_THREADPOOL_SIZE (default: 2x CPU cores, requires restart)
     int web_port;
+    char web_bind_ip[32];
     char web_root[MAX_PATH_LENGTH];
     bool web_auth_enabled;
     char web_username[32];

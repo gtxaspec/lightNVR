@@ -28,6 +28,7 @@
 #define LOG_COMPONENT "RecordingsAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 #include "database/database_manager.h"
 #include "database/db_recordings.h"
 
@@ -45,7 +46,7 @@ static int ensure_thumbnails_dir(const char *storage_path) {
         return 0; // Already exists
     }
 
-    if (mkdir(dir_path, 0755) != 0 && errno != EEXIST) {
+    if (ensure_dir(dir_path)) {
         log_error("Failed to create thumbnails directory: %s (error: %s)",
                   dir_path, strerror(errno));
         return -1;

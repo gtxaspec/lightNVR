@@ -18,6 +18,7 @@
 #include <sqlite3.h>
 
 #include "unity.h"
+#include "utils/strings.h"
 #include "database/db_core.h"
 #include "database/db_detections.h"
 #include "database/db_recordings.h"
@@ -29,7 +30,7 @@ static detection_result_t make_result(const char *label, float conf) {
     detection_result_t r;
     memset(&r, 0, sizeof(r));
     r.count = 1;
-    strncpy(r.detections[0].label, label, MAX_LABEL_LENGTH - 1);
+    safe_strcpy(r.detections[0].label, label, MAX_LABEL_LENGTH, 0);
     r.detections[0].confidence = conf;
     r.detections[0].x = 0.1f; r.detections[0].y = 0.1f;
     r.detections[0].width = 0.2f; r.detections[0].height = 0.2f;
@@ -118,10 +119,10 @@ void test_update_detections_recording_id(void) {
     /* Create a real recording entry to satisfy the FK constraint */
     recording_metadata_t rec;
     memset(&rec, 0, sizeof(rec));
-    strncpy(rec.stream_name, "cam6",        sizeof(rec.stream_name) - 1);
-    strncpy(rec.file_path,   "/tmp/t.mp4",  sizeof(rec.file_path)   - 1);
-    strncpy(rec.codec,       "h264",        sizeof(rec.codec)        - 1);
-    strncpy(rec.trigger_type,"detection",   sizeof(rec.trigger_type) - 1);
+    safe_strcpy(rec.stream_name, "cam6",        sizeof(rec.stream_name),  0);
+    safe_strcpy(rec.file_path,   "/tmp/t.mp4",  sizeof(rec.file_path),    0);
+    safe_strcpy(rec.codec,       "h264",        sizeof(rec.codec),        0);
+    safe_strcpy(rec.trigger_type,"detection",   sizeof(rec.trigger_type), 0);
     rec.start_time   = now - 10;
     rec.end_time     = now;
     rec.size_bytes   = 1000;

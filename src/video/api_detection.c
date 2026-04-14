@@ -15,6 +15,7 @@
 #include "core/curl_init.h"
 #include "core/shutdown_coordinator.h"
 #include "core/mqtt_client.h"
+#include "utils/strings.h"
 #include "video/api_detection.h"
 #include "video/detection_result.h"
 #include "video/stream_manager.h"
@@ -591,7 +592,7 @@ int detect_objects_api(const char *api_url, const unsigned char *frame_data,
         goto cleanup;
     }
 
-    char preview[API_DETECTION_RESPONSE_PREVIEW_LEN] = {0};
+    char preview[API_DETECTION_RESPONSE_PREVIEW_LEN];
     int preview_len = (int)(chunk.size < (API_DETECTION_RESPONSE_PREVIEW_LEN - 1)
                                 ? chunk.size
                                 : (API_DETECTION_RESPONSE_PREVIEW_LEN - 1));
@@ -677,8 +678,7 @@ int detect_objects_api(const char *api_url, const unsigned char *frame_data,
         }
 
         // Add the detection to the result
-        strncpy(result->detections[result->count].label, label->valuestring, MAX_LABEL_LENGTH - 1);
-        result->detections[result->count].label[MAX_LABEL_LENGTH - 1] = '\0';
+        safe_strcpy(result->detections[result->count].label, label->valuestring, MAX_LABEL_LENGTH, 0);
         result->detections[result->count].confidence = (float)confidence->valuedouble;
         result->detections[result->count].x = (float)x_min->valuedouble;
         result->detections[result->count].y = (float)y_min->valuedouble;
@@ -696,8 +696,7 @@ int detect_objects_api(const char *api_url, const unsigned char *frame_data,
         // Parse optional zone_id field
         cJSON *zone_id = cJSON_GetObjectItem(detection, "zone_id");
         if (zone_id && cJSON_IsString(zone_id)) {
-            strncpy(result->detections[result->count].zone_id, zone_id->valuestring, MAX_ZONE_ID_LENGTH - 1);
-            result->detections[result->count].zone_id[MAX_ZONE_ID_LENGTH - 1] = '\0';
+            safe_strcpy(result->detections[result->count].zone_id, zone_id->valuestring, MAX_ZONE_ID_LENGTH, 0);
         } else {
             result->detections[result->count].zone_id[0] = '\0'; // Empty zone
         }
@@ -1039,8 +1038,7 @@ int detect_objects_api_snapshot(const char *api_url, const char *stream_name,
         }
 
         // Add detection to result
-        strncpy(result->detections[result->count].label, label->valuestring, MAX_LABEL_LENGTH - 1);
-        result->detections[result->count].label[MAX_LABEL_LENGTH - 1] = '\0';
+        safe_strcpy(result->detections[result->count].label, label->valuestring, MAX_LABEL_LENGTH, 0);
         result->detections[result->count].confidence = (float)confidence->valuedouble;
         result->detections[result->count].x = (float)x_min->valuedouble;
         result->detections[result->count].y = (float)y_min->valuedouble;
@@ -1053,8 +1051,7 @@ int detect_objects_api_snapshot(const char *api_url, const char *stream_name,
 
         cJSON *zone_id = cJSON_GetObjectItem(detection, "zone_id");
         if (zone_id && cJSON_IsString(zone_id)) {
-            strncpy(result->detections[result->count].zone_id, zone_id->valuestring, MAX_ZONE_ID_LENGTH - 1);
-            result->detections[result->count].zone_id[MAX_ZONE_ID_LENGTH - 1] = '\0';
+            safe_strcpy(result->detections[result->count].zone_id, zone_id->valuestring, MAX_ZONE_ID_LENGTH, 0);
         } else {
             result->detections[result->count].zone_id[0] = '\0';
         }

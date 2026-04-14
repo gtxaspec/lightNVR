@@ -5,11 +5,13 @@
 #include <stdbool.h>
 #include <time.h>
 
+#include "core/config.h"
+
 // Recording metadata structure
 typedef struct {
     uint64_t id;
     char stream_name[64];
-    char file_path[256];
+    char file_path[MAX_PATH_LENGTH];
     time_t start_time;
     time_t end_time;
     uint64_t size_bytes;
@@ -50,6 +52,19 @@ uint64_t add_recording_metadata(const recording_metadata_t *metadata);
  */
 int update_recording_metadata(uint64_t id, time_t end_time, 
                              uint64_t size_bytes, bool is_complete);
+
+/**
+ * Correct the start_time of an existing recording.
+ *
+ * Called after the pre-buffer has been flushed into a detection recording so
+ * that the database reflects the actual first-packet wall-clock time rather
+ * than the time at which mp4_writer_create() was called.
+ *
+ * @param id         Recording ID returned by add_recording_metadata()
+ * @param start_time Corrected start time (epoch seconds)
+ * @return 0 on success, non-zero on failure
+ */
+int update_recording_start_time(uint64_t id, time_t start_time);
 
 /**
  * Get recording metadata from the database

@@ -27,6 +27,7 @@
 #define LOG_COMPONENT "go2rtcProxy"
 #include "core/logger.h"
 #include "utils/memory.h"
+#include "utils/strings.h"
 
 // Maximum concurrent proxy threads (independent of UV_THREADPOOL_SIZE)
 #define MAX_CONCURRENT_PROXY_THREADS 32
@@ -240,8 +241,8 @@ static void proxy_async_cb(uv_async_t *handle) {
         } else {
             conn->response.status_code = (int)ctx->http_code;
             if (ctx->response_content_type[0] != '\0') {
-                strncpy(conn->response.content_type, ctx->response_content_type,
-                        sizeof(conn->response.content_type) - 1);
+                safe_strcpy(conn->response.content_type, ctx->response_content_type,
+                        sizeof(conn->response.content_type), 0);
             }
             http_response_add_header(&conn->response, "Access-Control-Allow-Origin", "*");
             http_response_add_header(&conn->response, "Access-Control-Allow-Methods",
@@ -345,8 +346,8 @@ int go2rtc_proxy_thread_submit(libuv_connection_t *conn, write_complete_action_t
                  port, req->path);
     }
 
-    strncpy(ctx->method, req->method_str, sizeof(ctx->method) - 1);
-    strncpy(ctx->content_type, req->content_type, sizeof(ctx->content_type) - 1);
+    safe_strcpy(ctx->method, req->method_str, sizeof(ctx->method), 0);
+    safe_strcpy(ctx->content_type, req->content_type, sizeof(ctx->content_type), 0);
     ctx->action = action;
     ctx->conn   = conn;
 

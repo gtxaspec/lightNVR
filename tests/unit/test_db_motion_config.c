@@ -16,6 +16,7 @@
 #include <sqlite3.h>
 
 #include "unity.h"
+#include "utils/strings.h"
 #include "database/db_core.h"
 #include "database/db_motion_config.h"
 #include "database/db_streams.h"
@@ -32,8 +33,8 @@ static motion_recording_config_t make_config(bool enabled) {
     cfg.pre_buffer_seconds  = 10;
     cfg.post_buffer_seconds = 20;
     cfg.max_file_duration   = 300;
-    strncpy(cfg.codec,   "h264",   sizeof(cfg.codec) - 1);
-    strncpy(cfg.quality, "medium", sizeof(cfg.quality) - 1);
+    safe_strcpy(cfg.codec,   "h264",   sizeof(cfg.codec), 0);
+    safe_strcpy(cfg.quality, "medium", sizeof(cfg.quality), 0);
     cfg.retention_days = 7;
     return cfg;
 }
@@ -48,8 +49,8 @@ static void clear_all(void) {
 static void ensure_stream(const char *name) {
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, name, sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://localhost/test", sizeof(s.url) - 1);
+    safe_strcpy(s.name, name, sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://localhost/test", sizeof(s.url), 0);
     s.enabled  = true;
     s.width    = 1920;
     s.height   = 1080;

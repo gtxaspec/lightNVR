@@ -11,26 +11,16 @@
 #include "database/db_recording_tags.h"
 #include "database/db_core.h"
 #include "core/logger.h"
-
-/* ---- helpers ---- */
-
-/** Trim leading/trailing whitespace in-place into a stack buffer. */
-static void trim_tag(const char *src, char *dst, size_t dst_size) {
-    while (*src && isspace((unsigned char)*src)) src++;
-    size_t len = strlen(src);
-    while (len > 0 && isspace((unsigned char)src[len - 1])) len--;
-    if (len >= dst_size) len = dst_size - 1;
-    memcpy(dst, src, len);
-    dst[len] = '\0';
-}
+#include "utils/strings.h"
 
 /* ---- single-recording ops ---- */
 
 int db_recording_tag_add(uint64_t recording_id, const char *tag) {
     if (!tag) return -1;
     char trimmed[MAX_TAG_LENGTH];
-    trim_tag(tag, trimmed, sizeof(trimmed));
-    if (trimmed[0] == '\0') return -1;
+    if (copy_trimmed_value(trimmed, sizeof(trimmed), tag, 0) == 0) {
+        return -1;
+    }
 
     sqlite3 *db = get_db_handle();
     pthread_mutex_t *mtx = get_db_mutex();
@@ -58,8 +48,9 @@ int db_recording_tag_add(uint64_t recording_id, const char *tag) {
 int db_recording_tag_remove(uint64_t recording_id, const char *tag) {
     if (!tag) return -1;
     char trimmed[MAX_TAG_LENGTH];
-    trim_tag(tag, trimmed, sizeof(trimmed));
-    if (trimmed[0] == '\0') return -1;
+    if (copy_trimmed_value(trimmed, sizeof(trimmed), tag, 0) == 0) {
+        return -1;
+    }
 
     sqlite3 *db = get_db_handle();
     pthread_mutex_t *mtx = get_db_mutex();
@@ -105,8 +96,7 @@ int db_recording_tag_get(uint64_t recording_id, char tags[][MAX_TAG_LENGTH], int
     while (sqlite3_step(stmt) == SQLITE_ROW && count < max_tags) {
         const char *t = (const char *)sqlite3_column_text(stmt, 0);
         if (t) {
-            strncpy(tags[count], t, MAX_TAG_LENGTH - 1);
-            tags[count][MAX_TAG_LENGTH - 1] = '\0';
+            safe_strcpy(tags[count], t, MAX_TAG_LENGTH, 0);
             count++;
         }
     }
@@ -149,8 +139,9 @@ int db_recording_tag_set(uint64_t recording_id, const char **tags, int tag_count
         for (int i = 0; i < tag_count; i++) {
             if (!tags[i]) continue;
             char trimmed[MAX_TAG_LENGTH];
-            trim_tag(tags[i], trimmed, sizeof(trimmed));
-            if (trimmed[0] == '\0') continue;
+            if (copy_trimmed_value(trimmed, sizeof(trimmed), tags[i], 0) == 0) {
+                continue;
+            }
             sqlite3_reset(ins_stmt);
             sqlite3_bind_int64(ins_stmt, 1, (sqlite3_int64)recording_id);
             sqlite3_bind_text(ins_stmt, 2, trimmed, -1, SQLITE_STATIC);
@@ -183,8 +174,7 @@ int db_recording_tag_get_all_unique(char tags[][MAX_TAG_LENGTH], int max_tags) {
     while (sqlite3_step(stmt) == SQLITE_ROW && count < max_tags) {
         const char *t = (const char *)sqlite3_column_text(stmt, 0);
         if (t) {
-            strncpy(tags[count], t, MAX_TAG_LENGTH - 1);
-            tags[count][MAX_TAG_LENGTH - 1] = '\0';
+            safe_strcpy(tags[count], t, MAX_TAG_LENGTH, 0);
             count++;
         }
     }
@@ -196,8 +186,9 @@ int db_recording_tag_get_all_unique(char tags[][MAX_TAG_LENGTH], int max_tags) {
 int db_recording_tag_batch_add(const uint64_t *recording_ids, int count, const char *tag) {
     if (!recording_ids || !tag || count <= 0) return -1;
     char trimmed[MAX_TAG_LENGTH];
-    trim_tag(tag, trimmed, sizeof(trimmed));
-    if (trimmed[0] == '\0') return -1;
+    if (copy_trimmed_value(trimmed, sizeof(trimmed), tag, 0) == 0) {
+        return -1;
+    }
 
     sqlite3 *db = get_db_handle();
     pthread_mutex_t *mtx = get_db_mutex();
@@ -229,8 +220,9 @@ int db_recording_tag_batch_add(const uint64_t *recording_ids, int count, const c
 int db_recording_tag_batch_remove(const uint64_t *recording_ids, int count, const char *tag) {
     if (!recording_ids || !tag || count <= 0) return -1;
     char trimmed[MAX_TAG_LENGTH];
-    trim_tag(tag, trimmed, sizeof(trimmed));
-    if (trimmed[0] == '\0') return -1;
+    if (copy_trimmed_value(trimmed, sizeof(trimmed), tag, 0) == 0) {
+        return -1;
+    }
 
     sqlite3 *db = get_db_handle();
     pthread_mutex_t *mtx = get_db_mutex();
@@ -262,8 +254,9 @@ int db_recording_tag_batch_remove(const uint64_t *recording_ids, int count, cons
 int db_recording_tag_get_recordings_by_tag(const char *tag, uint64_t *recording_ids, int max_ids) {
     if (!tag || !recording_ids) return -1;
     char trimmed[MAX_TAG_LENGTH];
-    trim_tag(tag, trimmed, sizeof(trimmed));
-    if (trimmed[0] == '\0') return -1;
+    if (copy_trimmed_value(trimmed, sizeof(trimmed), tag, 0) == 0) {
+        return -1;
+    }
 
     sqlite3 *db = get_db_handle();
     pthread_mutex_t *mtx = get_db_mutex();

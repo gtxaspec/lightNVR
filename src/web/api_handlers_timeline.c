@@ -25,7 +25,9 @@
 #define LOG_COMPONENT "RecordingsAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 #include "core/url_utils.h"
+#include "utils/strings.h"
 #include "database/database_manager.h"
 #include "database/db_core.h"
 #include "database/db_recordings.h"
@@ -108,10 +110,10 @@ int get_timeline_segments(const char *stream_name, time_t start_time, time_t end
         segments[count].id = (uint64_t)sqlite3_column_int64(stmt, 0);
 
         const char *sname = (const char *)sqlite3_column_text(stmt, 1);
-        if (sname) strncpy(segments[count].stream_name, sname, sizeof(segments[count].stream_name) - 1);
+        if (sname) safe_strcpy(segments[count].stream_name, sname, sizeof(segments[count].stream_name), 0);
 
         const char *fpath = (const char *)sqlite3_column_text(stmt, 2);
-        if (fpath) strncpy(segments[count].file_path, fpath, sizeof(segments[count].file_path) - 1);
+        if (fpath) safe_strcpy(segments[count].file_path, fpath, sizeof(segments[count].file_path), 0);
 
         segments[count].start_time  = (time_t)sqlite3_column_int64(stmt, 3);
         segments[count].end_time    = (time_t)sqlite3_column_int64(stmt, 4);
@@ -138,8 +140,8 @@ static time_t parse_iso8601_time(const char *time_str) {
     }
 
     // URL-decode the time string (replace %3A with :)
-    char decoded_time[64] = {0};
-    strncpy(decoded_time, time_str, sizeof(decoded_time) - 1);
+    char decoded_time[64];
+    safe_strcpy(decoded_time, time_str, sizeof(decoded_time), 0);
 
     // Replace %3A with :
     char *pos = decoded_time;
@@ -585,9 +587,9 @@ int create_timeline_manifest(const timeline_segment_t *segments, int segment_cou
     snprintf(temp_dir, sizeof(temp_dir), "%s/timeline_manifests", g_config.storage_path);
     
     // Create directory if it doesn't exist
-    struct stat st = {0};
-    if (stat(temp_dir, &st) == -1) {
-        mkdir(temp_dir, 0755);
+    if (ensure_dir(temp_dir)) {
+        log_error("Could not create directory for timeline manifest %s: %s", temp_dir, strerror(errno));
+        return -1;
     }
     
     // Generate a unique manifest filename
@@ -648,8 +650,7 @@ int create_timeline_manifest(const timeline_segment_t *segments, int segment_cou
     fclose(manifest);
     
     // Copy manifest path to output
-    strncpy(manifest_path, manifest_filename, MAX_PATH_LENGTH - 1);
-    manifest_path[MAX_PATH_LENGTH - 1] = '\0';
+    safe_strcpy(manifest_path, manifest_filename, MAX_PATH_LENGTH, 0);
     
     pthread_mutex_unlock(&manifest_mutex);
     

@@ -8,6 +8,7 @@
 #include "video/stream_manager.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "video/streams.h"
 #include "video/detection.h"
 #include "video/stream_reader.h"
@@ -295,8 +296,7 @@ void shutdown_stream_manager(void) {
     for (int i = 0; i < streams_capacity; i++) {
         if (streams[i].config.name[0] != '\0' && streams[i].status == STREAM_STATUS_RUNNING) {
             char stream_name[MAX_STREAM_NAME];
-            strncpy(stream_name, streams[i].config.name, MAX_STREAM_NAME - 1);
-            stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(stream_name, streams[i].config.name, MAX_STREAM_NAME, 0);
 
             bool streaming_enabled = streams[i].config.streaming_enabled;
             bool recording_enabled = streams[i].config.record;
@@ -457,15 +457,13 @@ int set_stream_detection_recording(stream_handle_t stream, bool enabled, const c
 
     // Get stream name for potential thread stopping/starting
     char stream_name[MAX_STREAM_NAME];
-    strncpy(stream_name, s->config.name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, s->config.name, MAX_STREAM_NAME, 0);
 
     // Update configuration
     s->config.detection_based_recording = enabled;
 
     if (model_path) {
-        strncpy(s->config.detection_model, model_path, MAX_PATH_LENGTH - 1);
-        s->config.detection_model[MAX_PATH_LENGTH - 1] = '\0';
+        safe_strcpy(s->config.detection_model, model_path, MAX_PATH_LENGTH, 0);
     }
 
     // Get a copy of the config for database update
@@ -670,8 +668,7 @@ int remove_stream(stream_handle_t handle) {
 
     // Save stream name for logging
     char stream_name[MAX_STREAM_NAME];
-    strncpy(stream_name, s->config.name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, s->config.name, MAX_STREAM_NAME, 0);
 
     // Note: Database deletion and go2rtc unregistration are handled by the caller
     // (handle_delete_stream) which calls delete_stream_config_internal() and
@@ -682,8 +679,7 @@ int remove_stream(stream_handle_t handle) {
 
     // Save stream name for timestamp tracker cleanup
     char stream_name_for_cleanup[MAX_STREAM_NAME];
-    strncpy(stream_name_for_cleanup, s->config.name, MAX_STREAM_NAME - 1);
-    stream_name_for_cleanup[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name_for_cleanup, s->config.name, MAX_STREAM_NAME, 0);
 
     memset(&s->config, 0, sizeof(stream_config_t));
     s->status = STREAM_STATUS_STOPPED;
@@ -710,8 +706,7 @@ int start_stream(stream_handle_t handle) {
     // Get stream name for logging
     char stream_name[MAX_STREAM_NAME];
     pthread_mutex_lock(&s->mutex);
-    strncpy(stream_name, s->config.name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, s->config.name, MAX_STREAM_NAME, 0);
     pthread_mutex_unlock(&s->mutex);
 
     // First try to use the new state management system
@@ -834,8 +829,7 @@ int stop_stream(stream_handle_t handle) {
     // Get stream name for logging
     char stream_name[MAX_STREAM_NAME];
     pthread_mutex_lock(&s->mutex);
-    strncpy(stream_name, s->config.name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, s->config.name, MAX_STREAM_NAME, 0);
     pthread_mutex_unlock(&s->mutex);
 
     // First try to use the new state management system
@@ -1047,8 +1041,7 @@ int set_stream_recording(stream_handle_t handle, bool enable) {
     // Get stream name for logging
     char stream_name[MAX_STREAM_NAME];
     pthread_mutex_lock(&s->mutex);
-    strncpy(stream_name, s->config.name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, s->config.name, MAX_STREAM_NAME, 0);
     pthread_mutex_unlock(&s->mutex);
 
     // First try to use the new state management system
@@ -1136,8 +1129,7 @@ int set_stream_streaming_enabled(stream_handle_t handle, bool enabled) {
     // Get stream name for logging
     char stream_name[MAX_STREAM_NAME];
     pthread_mutex_lock(&s->mutex);
-    strncpy(stream_name, s->config.name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, s->config.name, MAX_STREAM_NAME, 0);
     pthread_mutex_unlock(&s->mutex);
 
     // First try to use the new state management system
@@ -1203,8 +1195,7 @@ int set_stream_onvif_flag(stream_handle_t handle, bool is_onvif) {
     // Get stream name for logging
     char stream_name[MAX_STREAM_NAME];
     pthread_mutex_lock(&s->mutex);
-    strncpy(stream_name, s->config.name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, s->config.name, MAX_STREAM_NAME, 0);
     pthread_mutex_unlock(&s->mutex);
 
     log_info("Setting ONVIF flag for stream '%s' to %s", stream_name, is_onvif ? "true" : "false");

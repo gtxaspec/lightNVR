@@ -18,6 +18,7 @@
 #define LOG_COMPONENT "SettingsAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "database/db_core.h"
 #include "database/db_streams.h"
 #include "database/db_auth.h"
@@ -275,6 +276,7 @@ void handle_get_settings(const http_request_t *req, http_response_t *res) {
     // Add settings properties
     cJSON_AddNumberToObject(settings, "web_thread_pool_size", g_config.web_thread_pool_size);
     cJSON_AddNumberToObject(settings, "web_port", g_config.web_port);
+    cJSON_AddStringToObject(settings, "web_bind_ip", g_config.web_bind_ip);
     cJSON_AddStringToObject(settings, "web_root", g_config.web_root);
     cJSON_AddBoolToObject(settings, "web_auth_enabled", g_config.web_auth_enabled);
     cJSON_AddBoolToObject(settings, "demo_mode", g_config.demo_mode);
@@ -440,23 +442,23 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // Snapshot current MQTT settings before parsing new values
     bool old_mqtt_enabled = g_config.mqtt_enabled;
     char old_mqtt_broker_host[256];
-    strncpy(old_mqtt_broker_host, g_config.mqtt_broker_host, sizeof(old_mqtt_broker_host));
+    safe_strcpy(old_mqtt_broker_host, g_config.mqtt_broker_host, sizeof(old_mqtt_broker_host), 0);
     int old_mqtt_broker_port = g_config.mqtt_broker_port;
     char old_mqtt_username[128];
-    strncpy(old_mqtt_username, g_config.mqtt_username, sizeof(old_mqtt_username));
+    safe_strcpy(old_mqtt_username, g_config.mqtt_username, sizeof(old_mqtt_username), 0);
     char old_mqtt_password[128];
-    strncpy(old_mqtt_password, g_config.mqtt_password, sizeof(old_mqtt_password));
+    safe_strcpy(old_mqtt_password, g_config.mqtt_password, sizeof(old_mqtt_password), 0);
     char old_mqtt_client_id[128];
-    strncpy(old_mqtt_client_id, g_config.mqtt_client_id, sizeof(old_mqtt_client_id));
+    safe_strcpy(old_mqtt_client_id, g_config.mqtt_client_id, sizeof(old_mqtt_client_id), 0);
     char old_mqtt_topic_prefix[256];
-    strncpy(old_mqtt_topic_prefix, g_config.mqtt_topic_prefix, sizeof(old_mqtt_topic_prefix));
+    safe_strcpy(old_mqtt_topic_prefix, g_config.mqtt_topic_prefix, sizeof(old_mqtt_topic_prefix), 0);
     bool old_mqtt_tls_enabled = g_config.mqtt_tls_enabled;
     int old_mqtt_keepalive = g_config.mqtt_keepalive;
     int old_mqtt_qos = g_config.mqtt_qos;
     bool old_mqtt_retain = g_config.mqtt_retain;
     bool old_mqtt_ha_discovery = g_config.mqtt_ha_discovery;
     char old_mqtt_ha_discovery_prefix[128];
-    strncpy(old_mqtt_ha_discovery_prefix, g_config.mqtt_ha_discovery_prefix, sizeof(old_mqtt_ha_discovery_prefix));
+    safe_strcpy(old_mqtt_ha_discovery_prefix, g_config.mqtt_ha_discovery_prefix, sizeof(old_mqtt_ha_discovery_prefix), 0);
     int old_mqtt_ha_snapshot_interval = g_config.mqtt_ha_snapshot_interval;
 
     // Web thread pool size (requires restart; stored in config only)
@@ -482,11 +484,33 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
         log_info("Updated web_port: %d", g_config.web_port);
     }
 
+    // Web bind address
+    cJSON *web_bind_ip = cJSON_GetObjectItem(settings, "web_bind_ip");
+    if (web_bind_ip && cJSON_IsString(web_bind_ip)) {
+        const char *new_bind_ip = web_bind_ip->valuestring;
+        bool bind_ip_empty = (new_bind_ip == NULL);
+
+        if (!bind_ip_empty) {
+            while (isspace((unsigned char)*new_bind_ip)) {
+                new_bind_ip++;
+            }
+            bind_ip_empty = (*new_bind_ip == '\0');
+        }
+
+        if (bind_ip_empty) {
+            log_warn("Rejected empty web_bind_ip update");
+        } else if (strcmp(g_config.web_bind_ip, new_bind_ip) != 0) {
+            safe_strcpy(g_config.web_bind_ip, new_bind_ip, sizeof(g_config.web_bind_ip), 0);
+            settings_changed = true;
+            restart_required = true;
+            log_info("Updated web_bind_ip: %s (restart required)", g_config.web_bind_ip);
+        }
+    }
+
     // Web root
     cJSON *web_root = cJSON_GetObjectItem(settings, "web_root");
     if (web_root && cJSON_IsString(web_root)) {
-        strncpy(g_config.web_root, web_root->valuestring, sizeof(g_config.web_root) - 1);
-        g_config.web_root[sizeof(g_config.web_root) - 1] = '\0';
+        safe_strcpy(g_config.web_root, web_root->valuestring, sizeof(g_config.web_root), 0);
         settings_changed = true;
         log_info("Updated web_root: %s", g_config.web_root);
     }
@@ -561,9 +585,8 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
             http_response_set_json_error(res, 400, "Invalid trusted_proxy_cidrs: expected comma- or newline-separated IPv4/IPv6 CIDRs");
             return;
         }
-        strncpy(g_config.trusted_proxy_cidrs, trusted_proxy_cidrs->valuestring,
-                sizeof(g_config.trusted_proxy_cidrs) - 1);
-        g_config.trusted_proxy_cidrs[sizeof(g_config.trusted_proxy_cidrs) - 1] = '\0';
+        safe_strcpy(g_config.trusted_proxy_cidrs, trusted_proxy_cidrs->valuestring,
+                sizeof(g_config.trusted_proxy_cidrs), 0);
         settings_changed = true;
         log_info("Updated trusted_proxy_cidrs");
     }
@@ -618,8 +641,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
                 "Invalid storage_path: must be an absolute path without shell metacharacters");
             return;
         }
-        strncpy(g_config.storage_path, storage_path->valuestring, sizeof(g_config.storage_path) - 1);
-        g_config.storage_path[sizeof(g_config.storage_path) - 1] = '\0';
+        safe_strcpy(g_config.storage_path, storage_path->valuestring, sizeof(g_config.storage_path), 0);
         settings_changed = true;
         log_info("Updated storage_path: %s", g_config.storage_path);
     }
@@ -636,8 +658,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
                 "Invalid storage_path_hls: must be an absolute path without shell metacharacters");
             return;
         }
-        strncpy(g_config.storage_path_hls, hls_path_val, sizeof(g_config.storage_path_hls) - 1);
-        g_config.storage_path_hls[sizeof(g_config.storage_path_hls) - 1] = '\0';
+        safe_strcpy(g_config.storage_path_hls, hls_path_val, sizeof(g_config.storage_path_hls), 0);
         settings_changed = true;
         log_info("Updated storage_path_hls: %s",
                  hls_path_val[0] ? hls_path_val : "(cleared, will use storage_path)");
@@ -678,8 +699,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // Models path
     cJSON *models_path = cJSON_GetObjectItem(settings, "models_path");
     if (models_path && cJSON_IsString(models_path)) {
-        strncpy(g_config.models_path, models_path->valuestring, sizeof(g_config.models_path) - 1);
-        g_config.models_path[sizeof(g_config.models_path) - 1] = '\0';
+        safe_strcpy(g_config.models_path, models_path->valuestring, sizeof(g_config.models_path), 0);
         settings_changed = true;
         log_info("Updated models_path: %s", g_config.models_path);
     }
@@ -702,8 +722,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // Log file
     cJSON *log_file = cJSON_GetObjectItem(settings, "log_file");
     if (log_file && cJSON_IsString(log_file)) {
-        strncpy(g_config.log_file, log_file->valuestring, sizeof(g_config.log_file) - 1);
-        g_config.log_file[sizeof(g_config.log_file) - 1] = '\0';
+        safe_strcpy(g_config.log_file, log_file->valuestring, sizeof(g_config.log_file), 0);
         settings_changed = true;
         log_info("Updated log_file: %s", g_config.log_file);
     }
@@ -728,8 +747,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // Syslog ident
     cJSON *syslog_ident = cJSON_GetObjectItem(settings, "syslog_ident");
     if (syslog_ident && cJSON_IsString(syslog_ident)) {
-        strncpy(g_config.syslog_ident, syslog_ident->valuestring, sizeof(g_config.syslog_ident) - 1);
-        g_config.syslog_ident[sizeof(g_config.syslog_ident) - 1] = '\0';
+        safe_strcpy(g_config.syslog_ident, syslog_ident->valuestring, sizeof(g_config.syslog_ident), 0);
         settings_changed = true;
         log_info("Updated syslog_ident: %s", g_config.syslog_ident);
     }
@@ -815,8 +833,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // Buffer strategy (default for new streams)
     cJSON *buffer_strategy = cJSON_GetObjectItem(settings, "buffer_strategy");
     if (buffer_strategy && cJSON_IsString(buffer_strategy)) {
-        strncpy(g_config.default_buffer_strategy, buffer_strategy->valuestring, sizeof(g_config.default_buffer_strategy) - 1);
-        g_config.default_buffer_strategy[sizeof(g_config.default_buffer_strategy) - 1] = '\0';
+        safe_strcpy(g_config.default_buffer_strategy, buffer_strategy->valuestring, sizeof(g_config.default_buffer_strategy), 0);
         settings_changed = true;
         log_info("Updated default_buffer_strategy: %s", g_config.default_buffer_strategy);
     }
@@ -824,8 +841,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // API detection URL
     cJSON *api_detection_url = cJSON_GetObjectItem(settings, "api_detection_url");
     if (api_detection_url && cJSON_IsString(api_detection_url)) {
-        strncpy(g_config.api_detection_url, api_detection_url->valuestring, sizeof(g_config.api_detection_url) - 1);
-        g_config.api_detection_url[sizeof(g_config.api_detection_url) - 1] = '\0';
+        safe_strcpy(g_config.api_detection_url, api_detection_url->valuestring, sizeof(g_config.api_detection_url), 0);
         settings_changed = true;
         log_info("Updated api_detection_url: %s", g_config.api_detection_url);
     }
@@ -833,8 +849,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // API detection backend
     cJSON *api_detection_backend = cJSON_GetObjectItem(settings, "api_detection_backend");
     if (api_detection_backend && cJSON_IsString(api_detection_backend)) {
-        strncpy(g_config.api_detection_backend, api_detection_backend->valuestring, sizeof(g_config.api_detection_backend) - 1);
-        g_config.api_detection_backend[sizeof(g_config.api_detection_backend) - 1] = '\0';
+        safe_strcpy(g_config.api_detection_backend, api_detection_backend->valuestring, sizeof(g_config.api_detection_backend), 0);
         settings_changed = true;
         log_info("Updated api_detection_backend: %s", g_config.api_detection_backend);
     }
@@ -859,16 +874,14 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
 
     cJSON *go2rtc_binary_path = cJSON_GetObjectItem(settings, "go2rtc_binary_path");
     if (go2rtc_binary_path && cJSON_IsString(go2rtc_binary_path)) {
-        strncpy(g_config.go2rtc_binary_path, go2rtc_binary_path->valuestring, sizeof(g_config.go2rtc_binary_path) - 1);
-        g_config.go2rtc_binary_path[sizeof(g_config.go2rtc_binary_path) - 1] = '\0';
+        safe_strcpy(g_config.go2rtc_binary_path, go2rtc_binary_path->valuestring, sizeof(g_config.go2rtc_binary_path), 0);
         settings_changed = true;
         log_info("Updated go2rtc_binary_path: %s", g_config.go2rtc_binary_path);
     }
 
     cJSON *go2rtc_config_dir = cJSON_GetObjectItem(settings, "go2rtc_config_dir");
     if (go2rtc_config_dir && cJSON_IsString(go2rtc_config_dir)) {
-        strncpy(g_config.go2rtc_config_dir, go2rtc_config_dir->valuestring, sizeof(g_config.go2rtc_config_dir) - 1);
-        g_config.go2rtc_config_dir[sizeof(g_config.go2rtc_config_dir) - 1] = '\0';
+        safe_strcpy(g_config.go2rtc_config_dir, go2rtc_config_dir->valuestring, sizeof(g_config.go2rtc_config_dir), 0);
         settings_changed = true;
         log_info("Updated go2rtc_config_dir: %s", g_config.go2rtc_config_dir);
     }
@@ -910,24 +923,21 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
 
     cJSON *go2rtc_stun_server = cJSON_GetObjectItem(settings, "go2rtc_stun_server");
     if (go2rtc_stun_server && cJSON_IsString(go2rtc_stun_server)) {
-        strncpy(g_config.go2rtc_stun_server, go2rtc_stun_server->valuestring, sizeof(g_config.go2rtc_stun_server) - 1);
-        g_config.go2rtc_stun_server[sizeof(g_config.go2rtc_stun_server) - 1] = '\0';
+        safe_strcpy(g_config.go2rtc_stun_server, go2rtc_stun_server->valuestring, sizeof(g_config.go2rtc_stun_server), 0);
         settings_changed = true;
         log_info("Updated go2rtc_stun_server: %s", g_config.go2rtc_stun_server);
     }
 
     cJSON *go2rtc_external_ip = cJSON_GetObjectItem(settings, "go2rtc_external_ip");
     if (go2rtc_external_ip && cJSON_IsString(go2rtc_external_ip)) {
-        strncpy(g_config.go2rtc_external_ip, go2rtc_external_ip->valuestring, sizeof(g_config.go2rtc_external_ip) - 1);
-        g_config.go2rtc_external_ip[sizeof(g_config.go2rtc_external_ip) - 1] = '\0';
+        safe_strcpy(g_config.go2rtc_external_ip, go2rtc_external_ip->valuestring, sizeof(g_config.go2rtc_external_ip), 0);
         settings_changed = true;
         log_info("Updated go2rtc_external_ip: %s", g_config.go2rtc_external_ip);
     }
 
     cJSON *go2rtc_ice_servers = cJSON_GetObjectItem(settings, "go2rtc_ice_servers");
     if (go2rtc_ice_servers && cJSON_IsString(go2rtc_ice_servers)) {
-        strncpy(g_config.go2rtc_ice_servers, go2rtc_ice_servers->valuestring, sizeof(g_config.go2rtc_ice_servers) - 1);
-        g_config.go2rtc_ice_servers[sizeof(g_config.go2rtc_ice_servers) - 1] = '\0';
+        safe_strcpy(g_config.go2rtc_ice_servers, go2rtc_ice_servers->valuestring, sizeof(g_config.go2rtc_ice_servers), 0);
         settings_changed = true;
         log_info("Updated go2rtc_ice_servers: %s", g_config.go2rtc_ice_servers);
     }
@@ -950,8 +960,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // MQTT broker host
     cJSON *mqtt_broker_host = cJSON_GetObjectItem(settings, "mqtt_broker_host");
     if (mqtt_broker_host && cJSON_IsString(mqtt_broker_host)) {
-        strncpy(g_config.mqtt_broker_host, mqtt_broker_host->valuestring, sizeof(g_config.mqtt_broker_host) - 1);
-        g_config.mqtt_broker_host[sizeof(g_config.mqtt_broker_host) - 1] = '\0';
+        safe_strcpy(g_config.mqtt_broker_host, mqtt_broker_host->valuestring, sizeof(g_config.mqtt_broker_host), 0);
         settings_changed = true;
         log_info("Updated mqtt_broker_host: %s", g_config.mqtt_broker_host);
     }
@@ -967,8 +976,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // MQTT username
     cJSON *mqtt_username = cJSON_GetObjectItem(settings, "mqtt_username");
     if (mqtt_username && cJSON_IsString(mqtt_username)) {
-        strncpy(g_config.mqtt_username, mqtt_username->valuestring, sizeof(g_config.mqtt_username) - 1);
-        g_config.mqtt_username[sizeof(g_config.mqtt_username) - 1] = '\0';
+        safe_strcpy(g_config.mqtt_username, mqtt_username->valuestring, sizeof(g_config.mqtt_username), 0);
         settings_changed = true;
         log_info("Updated mqtt_username: %s", g_config.mqtt_username);
     }
@@ -976,8 +984,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // MQTT password (only update if not masked)
     cJSON *mqtt_password = cJSON_GetObjectItem(settings, "mqtt_password");
     if (mqtt_password && cJSON_IsString(mqtt_password) && strcmp(mqtt_password->valuestring, "********") != 0) {
-        strncpy(g_config.mqtt_password, mqtt_password->valuestring, sizeof(g_config.mqtt_password) - 1);
-        g_config.mqtt_password[sizeof(g_config.mqtt_password) - 1] = '\0';
+        safe_strcpy(g_config.mqtt_password, mqtt_password->valuestring, sizeof(g_config.mqtt_password), 0);
         settings_changed = true;
         log_info("Updated mqtt_password");
     }
@@ -985,8 +992,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // MQTT client ID
     cJSON *mqtt_client_id = cJSON_GetObjectItem(settings, "mqtt_client_id");
     if (mqtt_client_id && cJSON_IsString(mqtt_client_id)) {
-        strncpy(g_config.mqtt_client_id, mqtt_client_id->valuestring, sizeof(g_config.mqtt_client_id) - 1);
-        g_config.mqtt_client_id[sizeof(g_config.mqtt_client_id) - 1] = '\0';
+        safe_strcpy(g_config.mqtt_client_id, mqtt_client_id->valuestring, sizeof(g_config.mqtt_client_id), 0);
         settings_changed = true;
         log_info("Updated mqtt_client_id: %s", g_config.mqtt_client_id);
     }
@@ -994,8 +1000,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // MQTT topic prefix
     cJSON *mqtt_topic_prefix = cJSON_GetObjectItem(settings, "mqtt_topic_prefix");
     if (mqtt_topic_prefix && cJSON_IsString(mqtt_topic_prefix)) {
-        strncpy(g_config.mqtt_topic_prefix, mqtt_topic_prefix->valuestring, sizeof(g_config.mqtt_topic_prefix) - 1);
-        g_config.mqtt_topic_prefix[sizeof(g_config.mqtt_topic_prefix) - 1] = '\0';
+        safe_strcpy(g_config.mqtt_topic_prefix, mqtt_topic_prefix->valuestring, sizeof(g_config.mqtt_topic_prefix), 0);
         settings_changed = true;
         log_info("Updated mqtt_topic_prefix: %s", g_config.mqtt_topic_prefix);
     }
@@ -1046,8 +1051,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // MQTT HA discovery prefix
     cJSON *mqtt_ha_discovery_prefix = cJSON_GetObjectItem(settings, "mqtt_ha_discovery_prefix");
     if (mqtt_ha_discovery_prefix && cJSON_IsString(mqtt_ha_discovery_prefix)) {
-        strncpy(g_config.mqtt_ha_discovery_prefix, mqtt_ha_discovery_prefix->valuestring, sizeof(g_config.mqtt_ha_discovery_prefix) - 1);
-        g_config.mqtt_ha_discovery_prefix[sizeof(g_config.mqtt_ha_discovery_prefix) - 1] = '\0';
+        safe_strcpy(g_config.mqtt_ha_discovery_prefix, mqtt_ha_discovery_prefix->valuestring, sizeof(g_config.mqtt_ha_discovery_prefix), 0);
         settings_changed = true;
         log_info("Updated mqtt_ha_discovery_prefix: %s", g_config.mqtt_ha_discovery_prefix);
     }
@@ -1100,10 +1104,8 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     cJSON *turn_server_url = cJSON_GetObjectItem(settings, "turn_server_url");
     if (turn_server_url && cJSON_IsString(turn_server_url)) {
         char old_turn_server_url[256];
-        strncpy(old_turn_server_url, g_config.turn_server_url, sizeof(old_turn_server_url) - 1);
-        old_turn_server_url[sizeof(old_turn_server_url) - 1] = '\0';
-        strncpy(g_config.turn_server_url, turn_server_url->valuestring, sizeof(g_config.turn_server_url) - 1);
-        g_config.turn_server_url[sizeof(g_config.turn_server_url) - 1] = '\0';
+        safe_strcpy(old_turn_server_url, g_config.turn_server_url, sizeof(old_turn_server_url), 0);
+        safe_strcpy(g_config.turn_server_url, turn_server_url->valuestring, sizeof(g_config.turn_server_url), 0);
         settings_changed = true;
         log_info("Updated turn_server_url: %s", g_config.turn_server_url);
         if (strcmp(old_turn_server_url, g_config.turn_server_url) != 0 && g_config.go2rtc_enabled && g_config.turn_enabled) {
@@ -1116,10 +1118,8 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     cJSON *turn_username = cJSON_GetObjectItem(settings, "turn_username");
     if (turn_username && cJSON_IsString(turn_username)) {
         char old_turn_username[128];
-        strncpy(old_turn_username, g_config.turn_username, sizeof(old_turn_username) - 1);
-        old_turn_username[sizeof(old_turn_username) - 1] = '\0';
-        strncpy(g_config.turn_username, turn_username->valuestring, sizeof(g_config.turn_username) - 1);
-        g_config.turn_username[sizeof(g_config.turn_username) - 1] = '\0';
+        safe_strcpy(old_turn_username, g_config.turn_username, sizeof(old_turn_username), 0);
+        safe_strcpy(g_config.turn_username, turn_username->valuestring, sizeof(g_config.turn_username), 0);
         settings_changed = true;
         log_info("Updated turn_username: %s", g_config.turn_username);
         if (strcmp(old_turn_username, g_config.turn_username) != 0 && g_config.go2rtc_enabled && g_config.turn_enabled) {
@@ -1134,10 +1134,8 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
         // Only update if not the masked value
         if (strcmp(turn_password->valuestring, "********") != 0) {
             char old_turn_password[128];
-            strncpy(old_turn_password, g_config.turn_password, sizeof(old_turn_password) - 1);
-            old_turn_password[sizeof(old_turn_password) - 1] = '\0';
-            strncpy(g_config.turn_password, turn_password->valuestring, sizeof(g_config.turn_password) - 1);
-            g_config.turn_password[sizeof(g_config.turn_password) - 1] = '\0';
+            safe_strcpy(old_turn_password, g_config.turn_password, sizeof(old_turn_password), 0);
+            safe_strcpy(g_config.turn_password, turn_password->valuestring, sizeof(g_config.turn_password), 0);
             settings_changed = true;
             log_info("Updated turn_password");
             if (strcmp(old_turn_password, g_config.turn_password) != 0 && g_config.go2rtc_enabled && g_config.turn_enabled) {
@@ -1170,8 +1168,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
     // ONVIF discovery network
     cJSON *onvif_discovery_network = cJSON_GetObjectItem(settings, "onvif_discovery_network");
     if (onvif_discovery_network && cJSON_IsString(onvif_discovery_network)) {
-        strncpy(g_config.onvif_discovery_network, onvif_discovery_network->valuestring, sizeof(g_config.onvif_discovery_network) - 1);
-        g_config.onvif_discovery_network[sizeof(g_config.onvif_discovery_network) - 1] = '\0';
+        safe_strcpy(g_config.onvif_discovery_network, onvif_discovery_network->valuestring, sizeof(g_config.onvif_discovery_network), 0);
         settings_changed = true;
         log_info("Updated onvif_discovery_network: %s", g_config.onvif_discovery_network);
     }
@@ -1205,8 +1202,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
             return;
         }
 
-        strncpy(g_config.db_post_backup_script, script_path, sizeof(g_config.db_post_backup_script) - 1);
-        g_config.db_post_backup_script[sizeof(g_config.db_post_backup_script) - 1] = '\0';
+        safe_strcpy(g_config.db_post_backup_script, script_path, sizeof(g_config.db_post_backup_script), 0);
         settings_changed = true;
         log_info("Updated db_post_backup_script: %s",
                  g_config.db_post_backup_script[0] ? g_config.db_post_backup_script : "(disabled)");
@@ -1218,12 +1214,10 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
         strcmp(g_config.db_path, db_path->valuestring) != 0) {
         
         char old_db_path[MAX_PATH_LENGTH];
-        strncpy(old_db_path, g_config.db_path, sizeof(old_db_path) - 1);
-        old_db_path[sizeof(old_db_path) - 1] = '\0';
+        safe_strcpy(old_db_path, g_config.db_path, sizeof(old_db_path), 0);
         
         // Update the config with the new path
-        strncpy(g_config.db_path, db_path->valuestring, sizeof(g_config.db_path) - 1);
-        g_config.db_path[sizeof(g_config.db_path) - 1] = '\0';
+        safe_strcpy(g_config.db_path, db_path->valuestring, sizeof(g_config.db_path), 0);
         settings_changed = true;
         log_info("Database path changed from %s to %s", old_db_path, g_config.db_path);
         
@@ -1253,8 +1247,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
                 // Only add enabled streams to the active list
                 if (g_config.streams[i].enabled) {
                     // Copy the stream name for later use
-                    strncpy(active_streams[active_stream_count], g_config.streams[i].name, MAX_STREAM_NAME - 1);
-                    active_streams[active_stream_count][MAX_STREAM_NAME - 1] = '\0';
+                    safe_strcpy(active_streams[active_stream_count], g_config.streams[i].name, MAX_STREAM_NAME, 0);
                     log_info("Added active stream %d: %s", active_stream_count, active_streams[active_stream_count]);
                     active_stream_count++;
                     
@@ -1295,8 +1288,7 @@ void handle_post_settings(const http_request_t *req, http_response_t *res) {
             log_error("Failed to initialize database with new path, reverting to old path");
             
             // Revert to the old path
-            strncpy(g_config.db_path, old_db_path, sizeof(g_config.db_path) - 1);
-            g_config.db_path[sizeof(g_config.db_path) - 1] = '\0';
+            safe_strcpy(g_config.db_path, old_db_path, sizeof(g_config.db_path), 0);
             
             // Try to reinitialize with the old path
             if (init_database(g_config.db_path) != 0) {

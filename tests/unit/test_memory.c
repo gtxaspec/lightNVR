@@ -2,8 +2,7 @@
  * @file test_memory.c
  * @brief Layer 2 unit tests — memory utility functions
  *
- * Tests safe_malloc, safe_calloc, safe_strdup, safe_strcpy, safe_strcat,
- * secure_zero_memory, and the memory tracking counters.
+ * Tests safe_malloc, safe_calloc, secure_zero_memory, and the memory tracking counters.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -61,70 +60,6 @@ void test_safe_calloc_nmemb_zero_returns_null(void) {
 void test_safe_calloc_size_zero_returns_null(void) {
     void *p = safe_calloc(8, 0);
     TEST_ASSERT_NULL(p);
-}
-
-/* ================================================================
- * safe_strdup
- * ================================================================ */
-
-void test_safe_strdup_basic(void) {
-    char *dup = safe_strdup("hello");
-    TEST_ASSERT_NOT_NULL(dup);
-    TEST_ASSERT_EQUAL_STRING("hello", dup);
-    free(dup);
-}
-
-void test_safe_strdup_empty_string(void) {
-    char *dup = safe_strdup("");
-    TEST_ASSERT_NOT_NULL(dup);
-    TEST_ASSERT_EQUAL_STRING("", dup);
-    free(dup);
-}
-
-void test_safe_strdup_null_returns_null(void) {
-    char *dup = safe_strdup(NULL);
-    TEST_ASSERT_NULL(dup);
-}
-
-/* ================================================================
- * safe_strcpy
- * ================================================================ */
-
-void test_safe_strcpy_success(void) {
-    char buf[16];
-    int rc = safe_strcpy(buf, "hello", sizeof(buf));
-    TEST_ASSERT_EQUAL_INT(0, rc);
-    TEST_ASSERT_EQUAL_STRING("hello", buf);
-}
-
-void test_safe_strcpy_truncation_returns_error(void) {
-    char buf[4];
-    memset(buf, 0, sizeof(buf));
-    int rc = safe_strcpy(buf, "hello_world", sizeof(buf));
-    TEST_ASSERT_NOT_EQUAL(0, rc);
-    /* buf should still be null-terminated and contain truncated data */
-    TEST_ASSERT_EQUAL_INT('\0', buf[sizeof(buf) - 1]);
-    TEST_ASSERT_EQUAL_STRING("hel", buf);
-}
-
-/* ================================================================
- * safe_strcat
- * ================================================================ */
-
-void test_safe_strcat_success(void) {
-    char buf[32] = "hello";
-    int rc = safe_strcat(buf, " world", sizeof(buf));
-    TEST_ASSERT_EQUAL_INT(0, rc);
-    TEST_ASSERT_EQUAL_STRING("hello world", buf);
-}
-
-void test_safe_strcat_overflow_returns_error(void) {
-    char buf[8] = "hello";
-    int rc = safe_strcat(buf, "_overflow", sizeof(buf));
-    TEST_ASSERT_NOT_EQUAL(0, rc);
-    /* Buffer should remain a valid, null-terminated string and keep its safe content */
-    TEST_ASSERT_EQUAL_INT('\0', buf[sizeof(buf) - 1] == '\0' ? '\0' : buf[sizeof(buf) - 1]);
-    TEST_ASSERT_EQUAL_STRING_LEN("hello", buf, 5);
 }
 
 /* ================================================================
@@ -209,48 +144,6 @@ void test_safe_free_valid_pointer(void) {
 }
 
 /* ================================================================
- * safe_strcpy — additional NULL guard cases
- * ================================================================ */
-
-void test_safe_strcpy_null_dest_returns_error(void) {
-    int rc = safe_strcpy(NULL, "hello", 10);
-    TEST_ASSERT_NOT_EQUAL(0, rc);
-}
-
-void test_safe_strcpy_null_src_returns_error(void) {
-    char buf[16];
-    int rc = safe_strcpy(buf, NULL, sizeof(buf));
-    TEST_ASSERT_NOT_EQUAL(0, rc);
-}
-
-void test_safe_strcpy_zero_size_returns_error(void) {
-    char buf[16];
-    int rc = safe_strcpy(buf, "hello", 0);
-    TEST_ASSERT_NOT_EQUAL(0, rc);
-}
-
-/* ================================================================
- * safe_strcat — additional NULL guard cases
- * ================================================================ */
-
-void test_safe_strcat_null_dest_returns_error(void) {
-    int rc = safe_strcat(NULL, "world", 10);
-    TEST_ASSERT_NOT_EQUAL(0, rc);
-}
-
-void test_safe_strcat_null_src_returns_error(void) {
-    char buf[16] = "hello";
-    int rc = safe_strcat(buf, NULL, sizeof(buf));
-    TEST_ASSERT_NOT_EQUAL(0, rc);
-}
-
-void test_safe_strcat_zero_size_returns_error(void) {
-    char buf[16] = "hello";
-    int rc = safe_strcat(buf, " world", 0);
-    TEST_ASSERT_NOT_EQUAL(0, rc);
-}
-
-/* ================================================================
  * secure_zero_memory — edge cases
  * ================================================================ */
 
@@ -307,22 +200,6 @@ int main(void) {
     RUN_TEST(test_safe_calloc_zeroes_memory);
     RUN_TEST(test_safe_calloc_nmemb_zero_returns_null);
     RUN_TEST(test_safe_calloc_size_zero_returns_null);
-
-    RUN_TEST(test_safe_strdup_basic);
-    RUN_TEST(test_safe_strdup_empty_string);
-    RUN_TEST(test_safe_strdup_null_returns_null);
-
-    RUN_TEST(test_safe_strcpy_success);
-    RUN_TEST(test_safe_strcpy_truncation_returns_error);
-    RUN_TEST(test_safe_strcpy_null_dest_returns_error);
-    RUN_TEST(test_safe_strcpy_null_src_returns_error);
-    RUN_TEST(test_safe_strcpy_zero_size_returns_error);
-
-    RUN_TEST(test_safe_strcat_success);
-    RUN_TEST(test_safe_strcat_overflow_returns_error);
-    RUN_TEST(test_safe_strcat_null_dest_returns_error);
-    RUN_TEST(test_safe_strcat_null_src_returns_error);
-    RUN_TEST(test_safe_strcat_zero_size_returns_error);
 
     RUN_TEST(test_safe_realloc_grow);
     RUN_TEST(test_safe_realloc_shrink);

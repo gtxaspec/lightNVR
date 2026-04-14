@@ -13,6 +13,8 @@
 #include "core/config.h"
 #include "core/logger.h"
 #include "core/logger_json.h"
+#include "core/path_utils.h"
+#include "utils/strings.h"
 #include <cjson/cJSON.h>
 
 // JSON logger state
@@ -35,48 +37,6 @@ static const char *json_log_level_strings[] = {
     "info",
     "debug"
 };
-
-// Create directory if it doesn't exist (copied from logger.c)
-static int create_directory(const char *path) {
-    struct stat st;
-    
-    // Check if directory already exists
-    if (stat(path, &st) == 0) {
-        if (S_ISDIR(st.st_mode)) {
-            return 0; // Directory exists
-        } else {
-            return -1; // Path exists but is not a directory
-        }
-    }
-    
-    // Create directory with permissions 0755
-    if (mkdir(path, 0755) != 0) {
-        if (errno == ENOENT) {
-            // Parent directory doesn't exist, try to create it recursively
-            char *parent_path = strdup(path);
-            if (!parent_path) {
-                return -1;
-            }
-            
-            const char *parent_dir = dirname(parent_path);
-            int ret = create_directory(parent_dir);
-            free(parent_path);
-            
-            if (ret != 0) {
-                return -1;
-            }
-            
-            // Try again to create the directory
-            if (mkdir(path, 0755) != 0) {
-                return -1;
-            }
-        } else {
-            return -1;
-        }
-    }
-    
-    return 0;
-}
 
 /**
  * @brief Initialize the JSON logger
@@ -103,7 +63,7 @@ int init_json_logger(const char *filename) {
     }
     
     const char *dir = dirname(dir_path);
-    if (create_directory(dir) != 0) {
+    if (mkdir_recursive(dir) != 0) {
         free(dir_path);
         pthread_mutex_unlock(&json_logger.mutex);
         return -1;
@@ -120,8 +80,7 @@ int init_json_logger(const char *filename) {
     }
     
     // Store filename for potential log rotation
-    strncpy(json_logger.log_filename, filename, sizeof(json_logger.log_filename) - 1);
-    json_logger.log_filename[sizeof(json_logger.log_filename) - 1] = '\0';
+    safe_strcpy(json_logger.log_filename, filename, sizeof(json_logger.log_filename), 0);
     
     json_logger.initialized = 1;
     

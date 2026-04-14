@@ -28,6 +28,7 @@
 #include "database/db_recordings.h"
 #include "database/db_schema.h"
 #include "database/db_schema_cache.h"
+#include "utils/strings.h"
 
 // Dummy URL for soft-deleted streams
 #define DUMMY_URL "rtsp://dummy.url/stream"
@@ -152,14 +153,14 @@ static bool create_disabled_stream(const char *stream_name) {
     
     // Initialize stream configuration with default values
     memset(&stream, 0, sizeof(stream_config_t));
-    strncpy(stream.name, stream_name, MAX_STREAM_NAME - 1);
-    strncpy(stream.url, DUMMY_URL, MAX_URL_LENGTH - 1);
+    safe_strcpy(stream.name, stream_name, MAX_STREAM_NAME, 0);
+    safe_strcpy(stream.url, DUMMY_URL, MAX_URL_LENGTH, 0);
     stream.enabled = false;
     stream.streaming_enabled = false;
     stream.width = 1280;
     stream.height = 720;
     stream.fps = 30;
-    strncpy(stream.codec, "h264", sizeof(stream.codec) - 1);
+    safe_strcpy(stream.codec, "h264", sizeof(stream.codec), 0);
     stream.priority = 5;
     stream.record = false;  // Set record to false for disabled streams
     stream.segment_duration = 60;
@@ -195,7 +196,7 @@ static bool extract_recording_info(const char *file_path, recording_file_info_t 
     
     // Initialize info structure
     memset(info, 0, sizeof(recording_file_info_t));
-    strncpy(info->path, file_path, MAX_PATH_LENGTH - 1);
+    safe_strcpy(info->path, file_path, MAX_PATH_LENGTH, 0);
     
     // Extract stream name from path
     // Assuming path format: /storage_path/mp4/stream_name/recording.mp4
@@ -212,12 +213,7 @@ static bool extract_recording_info(const char *file_path, recording_file_info_t 
         return false;
     }
     
-    size_t stream_name_len = stream_name_end - stream_name_start;
-    if (stream_name_len >= MAX_STREAM_NAME) {
-        stream_name_len = MAX_STREAM_NAME - 1;
-    }
-    strncpy(info->stream_name, stream_name_start, stream_name_len);
-    info->stream_name[stream_name_len] = '\0';
+    safe_strcpy(info->stream_name, stream_name_start, MAX_STREAM_NAME, stream_name_end - stream_name_start);
     
     // Get file size
     if (stat(file_path, &st) == 0) {
@@ -264,9 +260,9 @@ static bool extract_recording_info(const char *file_path, recording_file_info_t 
     // Get codec name
     const AVCodecDescriptor *codec_desc = avcodec_descriptor_get(codec_params->codec_id);
     if (codec_desc) {
-        strncpy(info->codec, codec_desc->name, sizeof(info->codec) - 1);
+        safe_strcpy(info->codec, codec_desc->name, sizeof(info->codec), 0);
     } else {
-        strncpy(info->codec, "unknown", sizeof(info->codec) - 1);
+        safe_strcpy(info->codec, "unknown", sizeof(info->codec), 0);
     }
     
     // Calculate FPS
@@ -315,15 +311,15 @@ static bool add_recording_to_db(const recording_file_info_t *info) {
     
     // Fill in metadata
     memset(&metadata, 0, sizeof(recording_metadata_t));
-    strncpy(metadata.stream_name, info->stream_name, sizeof(metadata.stream_name) - 1);
-    strncpy(metadata.file_path, info->path, sizeof(metadata.file_path) - 1);
+    safe_strcpy(metadata.stream_name, info->stream_name, sizeof(metadata.stream_name), 0);
+    safe_strcpy(metadata.file_path, info->path, sizeof(metadata.file_path), 0);
     metadata.start_time = info->start_time;
     metadata.end_time = info->end_time;
     metadata.size_bytes = info->size_bytes;
     metadata.width = info->width;
     metadata.height = info->height;
     metadata.fps = info->fps;
-    strncpy(metadata.codec, info->codec, sizeof(metadata.codec) - 1);
+    safe_strcpy(metadata.codec, info->codec, sizeof(metadata.codec), 0);
     metadata.is_complete = true;
     
     // Add to database
@@ -525,10 +521,10 @@ int main(int argc, const char *argv[]) {
     
     // Parse command line arguments
     if (argc > 1) {
-        strncpy(storage_path, argv[1], sizeof(storage_path) - 1);
+        safe_strcpy(storage_path, argv[1], sizeof(storage_path), 0);
     } else {
         // Use storage path from config
-        strncpy(storage_path, config.storage_path, sizeof(storage_path) - 1);
+        safe_strcpy(storage_path, config.storage_path, sizeof(storage_path), 0);
     }
     
     printf("Using storage path: %s\n", storage_path);

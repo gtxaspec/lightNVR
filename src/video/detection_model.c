@@ -226,15 +226,14 @@ static detection_model_t load_tflite_model(const char *model_path, float thresho
     }
 
     // Initialize model structure
-    strncpy(model->type, MODEL_TYPE_TFLITE, sizeof(model->type) - 1);
+    safe_strcpy(model->type, MODEL_TYPE_TFLITE, sizeof(model->type), 0);
     model->tflite.handle = handle;
     model->tflite.model = tflite_model;
     model->tflite.threshold = threshold;
     model->tflite.load_model = tflite_load_model;
     model->tflite.free_model = tflite_free_model;
     model->tflite.detect = tflite_detect;
-    strncpy(model->path, model_path, MAX_PATH_LENGTH - 1);
-    model->path[MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
+    safe_strcpy(model->path, model_path, MAX_PATH_LENGTH, 0);
 
     log_info("TFLite model loaded: %s", model_path);
     return model;
@@ -350,11 +349,10 @@ detection_model_t load_detection_model(const char *model_path, float threshold) 
         // For API models, we just need to store the URL
         model_t *m = (model_t *)malloc(sizeof(model_t));
         if (m) {
-            strncpy(m->type, MODEL_TYPE_API, sizeof(m->type) - 1);
+            safe_strcpy(m->type, MODEL_TYPE_API, sizeof(m->type), 0);
             m->sod = NULL; // We don't need a model handle for API
             m->threshold = threshold;
-            strncpy(m->path, model_path, MAX_PATH_LENGTH - 1);
-            m->path[MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
+            safe_strcpy(m->path, model_path, MAX_PATH_LENGTH, 0);
             model = m;
 
             // Initialize the API detection system
@@ -365,11 +363,10 @@ detection_model_t load_detection_model(const char *model_path, float threshold) 
         // For ONVIF models, we just need to store the URL
         model_t *m = (model_t *)malloc(sizeof(model_t));
         if (m) {
-            strncpy(m->type, MODEL_TYPE_ONVIF, sizeof(m->type) - 1);
+            safe_strcpy(m->type, MODEL_TYPE_ONVIF, sizeof(m->type), 0);
             m->sod = NULL; // We don't need a model handle for ONVIF
             m->threshold = threshold;
-            strncpy(m->path, model_path, MAX_PATH_LENGTH - 1);
-            m->path[MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
+            safe_strcpy(m->path, model_path, MAX_PATH_LENGTH, 0);
             model = m;
 
             // Initialize the ONVIF detection system
@@ -382,11 +379,10 @@ detection_model_t load_detection_model(const char *model_path, float threshold) 
         // The actual detection is done by detect_motion() in motion_detection.c
         model_t *m = (model_t *)malloc(sizeof(model_t));
         if (m) {
-            strncpy(m->type, MODEL_TYPE_MOTION, sizeof(m->type) - 1);
+            safe_strcpy(m->type, MODEL_TYPE_MOTION, sizeof(m->type), 0);
             m->sod = NULL; // No external model handle needed
             m->threshold = threshold;
-            strncpy(m->path, model_path, MAX_PATH_LENGTH - 1);
-            m->path[MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
+            safe_strcpy(m->path, model_path, MAX_PATH_LENGTH, 0);
             model = m;
             log_info("Built-in motion detection model handle created");
         }
@@ -397,11 +393,10 @@ detection_model_t load_detection_model(const char *model_path, float threshold) 
             // Create model structure
             model_t *m = (model_t *)malloc(sizeof(model_t));
             if (m) {
-                strncpy(m->type, MODEL_TYPE_SOD_REALNET, sizeof(m->type) - 1);
+                safe_strcpy(m->type, MODEL_TYPE_SOD_REALNET, sizeof(m->type), 0);
                 m->sod_realnet = realnet_model;
                 m->threshold = threshold;
-                strncpy(m->path, model_path, MAX_PATH_LENGTH - 1);
-                m->path[MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
+                safe_strcpy(m->path, model_path, MAX_PATH_LENGTH, 0);
                 model = m;
             } else {
                 free_sod_realnet_model(realnet_model);
@@ -433,11 +428,11 @@ void unload_detection_model(detection_model_t model) {
     }
 
     model_t *m = (model_t *)model;
-    char model_path[MAX_PATH_LENGTH] = {0};
+    char model_path[MAX_PATH_LENGTH];
 
     // Save the path for logging
     if (m->path[0] != '\0') {
-        strncpy(model_path, m->path, MAX_PATH_LENGTH - 1);
+        safe_strcpy(model_path, m->path, MAX_PATH_LENGTH, 0);
     } else {
         strcpy(model_path, "unknown");
     }

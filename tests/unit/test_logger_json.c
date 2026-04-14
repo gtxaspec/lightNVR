@@ -18,11 +18,12 @@
 #include <unistd.h>
 
 #include "unity.h"
+#include "core/config.h"
 #include "core/logger.h"
 #include "core/logger_json.h"
 
 /* Shared temp file path used by setUp/tearDown */
-static char g_tmp_path[256];
+static char g_tmp_path[MAX_PATH_LENGTH];
 static int  g_initialized = 0;
 
 void setUp(void) {

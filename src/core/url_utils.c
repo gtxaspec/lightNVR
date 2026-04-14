@@ -34,13 +34,10 @@ static int split_url_base(const char *url, char **base_url, const char **suffix)
     const char *fragment = strchr(url, '#');
     size_t base_len = fragment ? (size_t)(fragment - url) : strlen(url);
 
-    char *base = malloc(base_len + 1);
+    char *base = strndup(url, base_len);
     if (!base) {
         return -1;
     }
-
-    memcpy(base, url, base_len);
-    base[base_len] = '\0';
 
     *base_url = base;
     if (suffix) {

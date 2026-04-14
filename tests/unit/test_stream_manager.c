@@ -16,14 +16,15 @@
 
 #include "unity.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/stream_state.h"
 
 static stream_config_t make_config(const char *name) {
     stream_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    strncpy(cfg.name, name, sizeof(cfg.name) - 1);
-    strncpy(cfg.url,  "rtsp://localhost/unit_test", sizeof(cfg.url) - 1);
+    safe_strcpy(cfg.name, name, sizeof(cfg.name), 0);
+    safe_strcpy(cfg.url,  "rtsp://localhost/unit_test", sizeof(cfg.url), 0);
     cfg.enabled  = true;
     cfg.width    = 1920;
     cfg.height   = 1080;

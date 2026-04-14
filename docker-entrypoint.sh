@@ -88,6 +88,7 @@ path = /var/lib/lightnvr/data/database/lightnvr.db
 
 [web]
 port = 8080
+bind_ip = 0.0.0.0
 root = /var/lib/lightnvr/www
 auth_enabled = true
 username = admin

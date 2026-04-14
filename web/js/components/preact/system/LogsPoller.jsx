@@ -94,7 +94,7 @@ export function LogsPoller({ logLevel, logCount, pollingInterval = 5000, onLogsR
         console.log(`Received ${filteredLogs.length} logs via HTTP API after filtering`);
         if (filteredLogs.length > logCount) {
           // Shrink to requested size if we received more than expected
-          filteredLogs = filteredLogs.slice(0, logCount)
+          filteredLogs = filteredLogs.slice(0, logCount);
         }
         onLogsReceivedRef.current(filteredLogs);
       } else {

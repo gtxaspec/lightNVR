@@ -20,6 +20,7 @@
 #include <errno.h>
 
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "video/mp4_recording.h"
 #include "video/mp4_recording_internal.h"
 #include "video/mp4_writer.h"
@@ -50,8 +51,7 @@ int register_mp4_writer_for_stream(const char *stream_name, mp4_writer_t *writer
     
     // Make a local copy of the stream name for thread safety
     char local_stream_name[MAX_STREAM_NAME];
-    strncpy(local_stream_name, stream_name, MAX_STREAM_NAME - 1);
-    local_stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(local_stream_name, stream_name, MAX_STREAM_NAME, 0);
 
     // Find empty slot or existing entry for this stream
     int slot = -1;
@@ -86,8 +86,7 @@ int register_mp4_writer_for_stream(const char *stream_name, mp4_writer_t *writer
 
     // Register the new writer
     mp4_writers[slot] = writer;
-    strncpy(mp4_writer_stream_names[slot], local_stream_name, sizeof(mp4_writer_stream_names[0]) - 1);
-    mp4_writer_stream_names[slot][sizeof(mp4_writer_stream_names[0]) - 1] = '\0';
+    safe_strcpy(mp4_writer_stream_names[slot], local_stream_name, sizeof(mp4_writer_stream_names[0]), 0);
     
     log_info("Registered MP4 writer for stream %s in slot %d", local_stream_name, slot);
 
@@ -110,8 +109,7 @@ mp4_writer_t *get_mp4_writer_for_stream(const char *stream_name) {
     
     // Make a local copy of the stream name for thread safety
     char local_stream_name[MAX_STREAM_NAME];
-    strncpy(local_stream_name, stream_name, MAX_STREAM_NAME - 1);
-    local_stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(local_stream_name, stream_name, MAX_STREAM_NAME, 0);
 
     // Use a local variable to store the writer pointer
     mp4_writer_t *writer_copy = NULL;
@@ -162,8 +160,7 @@ void unregister_mp4_writer_for_stream(const char *stream_name) {
     
     // Make a local copy of the stream name for thread safety
     char local_stream_name[MAX_STREAM_NAME];
-    strncpy(local_stream_name, stream_name, MAX_STREAM_NAME - 1);
-    local_stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(local_stream_name, stream_name, MAX_STREAM_NAME, 0);
     
     log_info("Unregistering MP4 writer for stream %s", local_stream_name);
 
@@ -213,10 +210,8 @@ void close_all_mp4_writers(void) {
             writers_to_close[num_writers_to_close] = writer;
 
             // Make a safe copy of the stream name FIRST from the static array (known safe memory)
-            strncpy(stream_names_to_close[num_writers_to_close],
-                    mp4_writer_stream_names[i],
-                    sizeof(stream_names_to_close[0]) - 1);
-            stream_names_to_close[num_writers_to_close][sizeof(stream_names_to_close[0]) - 1] = '\0';
+            safe_strcpy(stream_names_to_close[num_writers_to_close],
+                    mp4_writer_stream_names[i], sizeof(stream_names_to_close[0]), 0);
 
             // Clear the entry in the global array IMMEDIATELY to prevent any race conditions
             // This must be done before we access the writer's fields
@@ -233,10 +228,8 @@ void close_all_mp4_writers(void) {
             }
 
             if (writer_valid && writer->output_path[0] != '\0') {
-                strncpy(file_paths_to_close[num_writers_to_close],
-                        writer->output_path,
-                        MAX_PATH_LENGTH - 1);
-                file_paths_to_close[num_writers_to_close][MAX_PATH_LENGTH - 1] = '\0';
+                safe_strcpy(file_paths_to_close[num_writers_to_close],
+                        writer->output_path, MAX_PATH_LENGTH, 0);
 
                 // Log the path we're about to check
                 log_info("Checking MP4 file: %s", file_paths_to_close[num_writers_to_close]);

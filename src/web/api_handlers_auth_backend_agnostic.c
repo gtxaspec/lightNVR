@@ -20,6 +20,7 @@
 #define LOG_COMPONENT "AuthAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "database/db_auth.h"
 
 /* ========== Login Rate Limiting ========== */
@@ -95,8 +96,7 @@ static void record_failed_attempt(const char *username) {
 
     // Add new entry
     if (rate_limit_count < MAX_RATE_LIMIT_ENTRIES) {
-        strncpy(rate_limit_table[rate_limit_count].username, username, 63);
-        rate_limit_table[rate_limit_count].username[63] = '\0';
+        safe_strcpy(rate_limit_table[rate_limit_count].username, username, 64, 0);
         rate_limit_table[rate_limit_count].attempt_count = 1;
         rate_limit_table[rate_limit_count].window_start = now;
         rate_limit_count++;
@@ -110,8 +110,7 @@ static void record_failed_attempt(const char *username) {
                 oldest_idx = i;
             }
         }
-        strncpy(rate_limit_table[oldest_idx].username, username, 63);
-        rate_limit_table[oldest_idx].username[63] = '\0';
+        safe_strcpy(rate_limit_table[oldest_idx].username, username, 64, 0);
         rate_limit_table[oldest_idx].attempt_count = 1;
         rate_limit_table[oldest_idx].window_start = now;
     }
@@ -169,13 +168,13 @@ static int parse_form_credentials(const char *body, size_t body_len, char *usern
         return -1;
     }
 
-    // Make a copy of the body to work with
-    char *body_copy = malloc(body_len + 1);
+    // Make a copy of the body to work with. Note that body may
+    // not initially be null-terminated: strndup guarantees the
+    // result *will* be null-terminated.
+    char *body_copy = strndup(body, body_len);
     if (!body_copy) {
         return -1;
     }
-    memcpy(body_copy, body, body_len);
-    body_copy[body_len] = '\0';
 
     int result = -1;
 
@@ -226,8 +225,7 @@ void handle_auth_login(const http_request_t *req, http_response_t *res) {
     bool totp_verified = false;
 
     if (httpd_get_effective_client_ip(req, effective_client_ip, sizeof(effective_client_ip)) != 0) {
-        strncpy(effective_client_ip, req->client_ip, sizeof(effective_client_ip) - 1);
-        effective_client_ip[sizeof(effective_client_ip) - 1] = '\0';
+        safe_strcpy(effective_client_ip, req->client_ip, sizeof(effective_client_ip), 0);
     }
 
     // Check Content-Type to determine if it's form data or JSON
@@ -270,13 +268,13 @@ void handle_auth_login(const http_request_t *req, http_response_t *res) {
                 return;
             }
 
-            strncpy(username, username_json->valuestring, sizeof(username) - 1);
-            strncpy(password, password_json->valuestring, sizeof(password) - 1);
+            safe_strcpy(username, username_json->valuestring, sizeof(username), 0);
+            safe_strcpy(password, password_json->valuestring, sizeof(password), 0);
 
             // Extract optional TOTP code (used in force-MFA mode)
             cJSON *totp_code_json = cJSON_GetObjectItem(login, "totp_code");
             if (totp_code_json && cJSON_IsString(totp_code_json)) {
-                strncpy(totp_code, totp_code_json->valuestring, sizeof(totp_code) - 1);
+                safe_strcpy(totp_code, totp_code_json->valuestring, sizeof(totp_code), 0);
             }
 
             cJSON *remember_device_json = cJSON_GetObjectItem(login, "remember_device");

@@ -3,18 +3,19 @@
  * @brief Implementation of the go2rtc consumer module for recording and HLS streaming
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <curl/curl.h>
+
 #include "video/go2rtc/go2rtc_consumer.h"
 #include "video/go2rtc/go2rtc_api.h"
 #include "video/go2rtc/go2rtc_stream.h"
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <curl/curl.h>
+#include "utils/strings.h"
 
 // Buffer sizes
 #define URL_BUFFER_SIZE 2048
@@ -76,11 +77,9 @@ static consumer_state_t *add_consumer(consumer_state_t *consumers, const char *s
     // Find an empty slot
     for (int i = 0; i < MAX_CONSUMERS; i++) {
         if (!consumers[i].is_active) {
-            strncpy(consumers[i].stream_id, stream_id, MAX_STREAM_NAME - 1);
-            consumers[i].stream_id[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(consumers[i].stream_id, stream_id, MAX_STREAM_NAME, 0);
             
-            strncpy(consumers[i].output_path, output_path, MAX_PATH_LENGTH - 1);
-            consumers[i].output_path[MAX_PATH_LENGTH - 1] = '\0';
+            safe_strcpy(consumers[i].output_path, output_path, MAX_PATH_LENGTH, 0);
             
             consumers[i].segment_duration = segment_duration;
             consumers[i].is_active = true;

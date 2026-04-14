@@ -19,16 +19,17 @@
 #include "database/db_recording_tags.h"
 #include "database/db_recordings.h"
 #include "video/detection_result.h"
+#include "utils/strings.h"
 
 #define TEST_DB_PATH "/tmp/lightnvr_unit_recordings_ext_test.db"
 
 static recording_metadata_t make_rec(const char *stream, const char *path, time_t start) {
     recording_metadata_t m;
     memset(&m, 0, sizeof(m));
-    strncpy(m.stream_name, stream, sizeof(m.stream_name) - 1);
-    strncpy(m.file_path,   path,   sizeof(m.file_path)   - 1);
-    strncpy(m.codec,       "h264", sizeof(m.codec)       - 1);
-    strncpy(m.trigger_type, "scheduled", sizeof(m.trigger_type) - 1);
+    safe_strcpy(m.stream_name, stream, sizeof(m.stream_name), 0);
+    safe_strcpy(m.file_path,   path,   sizeof(m.file_path),   0);
+    safe_strcpy(m.codec,       "h264", sizeof(m.codec),       0);
+    safe_strcpy(m.trigger_type, "scheduled", sizeof(m.trigger_type), 0);
     m.start_time  = start;
     m.end_time    = start + 60;
     m.size_bytes  = 1024 * 1024;
@@ -51,7 +52,7 @@ static detection_result_t make_detection_result(const char *label) {
     detection_result_t result;
     memset(&result, 0, sizeof(result));
     result.count = 1;
-    strncpy(result.detections[0].label, label, sizeof(result.detections[0].label) - 1);
+    safe_strcpy(result.detections[0].label, label, sizeof(result.detections[0].label), 0);
     result.detections[0].confidence = 0.9f;
     result.detections[0].width = 0.3f;
     result.detections[0].height = 0.3f;
@@ -131,8 +132,8 @@ void test_get_recording_count_supports_multi_value_stream_tag_and_capture_filter
     recording_metadata_t scheduled = make_rec("cam1", "/rec/multi-1.mp4", now);
     recording_metadata_t detection = make_rec("cam2", "/rec/multi-2.mp4", now + 60);
     recording_metadata_t manual = make_rec("cam3", "/rec/multi-3.mp4", now + 120);
-    strncpy(detection.trigger_type, "detection", sizeof(detection.trigger_type) - 1);
-    strncpy(manual.trigger_type, "manual", sizeof(manual.trigger_type) - 1);
+    safe_strcpy(detection.trigger_type, "detection", sizeof(detection.trigger_type), 0);
+    safe_strcpy(manual.trigger_type, "manual", sizeof(manual.trigger_type), 0);
 
     uint64_t scheduled_id = add_recording_metadata(&scheduled);
     uint64_t detection_id = add_recording_metadata(&detection);

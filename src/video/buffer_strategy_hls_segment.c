@@ -24,6 +24,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/path_utils.h"
+#include "utils/strings.h"
 
 // Maximum segments to track
 #define MAX_TRACKED_SEGMENTS 32
@@ -118,7 +119,7 @@ static int scan_existing_segments(hls_segment_strategy_data_t *data) {
         
         // Add to circular buffer
         tracked_segment_t *seg = &data->segments[data->head];
-        strncpy(seg->path, path, sizeof(seg->path) - 1);
+        safe_strcpy(seg->path, path, sizeof(seg->path), 0);
         seg->mtime = st.st_mtime;
         seg->duration_seconds = duration;
         seg->size_bytes = st.st_size;
@@ -236,7 +237,7 @@ static int hls_segment_strategy_add_segment(pre_buffer_strategy_t *self,
 
     // Add new segment
     tracked_segment_t *seg = &data->segments[data->head];
-    strncpy(seg->path, segment_path, sizeof(seg->path) - 1);
+    safe_strcpy(seg->path, segment_path, sizeof(seg->path), 0);
     seg->mtime = st.st_mtime;
     seg->duration_seconds = duration > 0 ? duration : data->default_segment_duration;
     seg->size_bytes = st.st_size;
@@ -308,7 +309,7 @@ static int hls_segment_strategy_get_segments(pre_buffer_strategy_t *self,
         const tracked_segment_t *seg = &data->segments[idx];
 
         if (seg->valid) {
-            strncpy(segments[count].path, seg->path, sizeof(segments[count].path) - 1);
+            safe_strcpy(segments[count].path, seg->path, sizeof(segments[count].path), 0);
             segments[count].timestamp = seg->mtime;
             segments[count].duration = seg->duration_seconds;
             segments[count].size_bytes = seg->size_bytes;
@@ -441,11 +442,11 @@ pre_buffer_strategy_t* create_hls_segment_strategy(const char *stream_name,
         return NULL;
     }
 
-    strncpy(data->stream_name, stream_name, sizeof(data->stream_name) - 1);
+    safe_strcpy(data->stream_name, stream_name, sizeof(data->stream_name), 0);
 
     strategy->name = "hls_segment";
     strategy->type = BUFFER_STRATEGY_HLS_SEGMENT;
-    strncpy(strategy->stream_name, stream_name, sizeof(strategy->stream_name) - 1);
+    safe_strcpy(strategy->stream_name, stream_name, sizeof(strategy->stream_name), 0);
     strategy->private_data = data;
 
     // Set interface methods

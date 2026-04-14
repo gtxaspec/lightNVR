@@ -13,6 +13,7 @@
 #include "database/db_query_builder.h"
 #include "database/db_schema_cache.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 int qb_init(query_builder_t *qb, const char *table_name) {
     if (!qb || !table_name) {
@@ -38,8 +39,7 @@ int qb_add_column(query_builder_t *qb, const char *column_name, bool is_required
     }
     
     column_info_t *col = &qb->columns[qb->column_count];
-    strncpy(col->name, column_name, sizeof(col->name) - 1);
-    col->name[sizeof(col->name) - 1] = '\0';
+    safe_strcpy(col->name, column_name, sizeof(col->name), 0);
     
     // Check if column exists using the cached schema lookup
     col->present = cached_column_exists(qb->table_name, column_name);
@@ -180,8 +180,7 @@ const char *qb_get_text(sqlite3_stmt *stmt, const query_builder_t *qb,
     int idx = qb_get_column_index(qb, column_name);
     if (idx < 0) {
         if (default_value && buffer && buffer_len > 0) {
-            strncpy(buffer, default_value, buffer_len - 1);
-            buffer[buffer_len - 1] = '\0';
+            safe_strcpy(buffer, default_value, buffer_len, 0);
         }
         return default_value;
     }
@@ -189,15 +188,13 @@ const char *qb_get_text(sqlite3_stmt *stmt, const query_builder_t *qb,
     const char *text = (const char *)sqlite3_column_text(stmt, idx);
     if (!text) {
         if (default_value && buffer && buffer_len > 0) {
-            strncpy(buffer, default_value, buffer_len - 1);
-            buffer[buffer_len - 1] = '\0';
+            safe_strcpy(buffer, default_value, buffer_len, 0);
         }
         return default_value;
     }
 
     if (buffer && buffer_len > 0) {
-        strncpy(buffer, text, buffer_len - 1);
-        buffer[buffer_len - 1] = '\0';
+        safe_strcpy(buffer, text, buffer_len, 0);
     }
 
     return text;

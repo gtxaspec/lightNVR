@@ -14,6 +14,7 @@
 #include "database/db_streams.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include <cjson/cJSON.h>
 
 /**
@@ -61,9 +62,8 @@ int get_stream_storage_usage(const char *storage_path, stream_storage_info_t *st
 
         // Only include streams that have recordings or storage
         // (include all to match previous behavior of including dirs with HLS segments)
-        strncpy(stream_info[stream_count].name, stream_names[i],
-                sizeof(stream_info[stream_count].name) - 1);
-        stream_info[stream_count].name[sizeof(stream_info[stream_count].name) - 1] = '\0';
+        safe_strcpy(stream_info[stream_count].name, stream_names[i],
+                sizeof(stream_info[stream_count].name), 0);
         stream_info[stream_count].size_bytes = (unsigned long)total_bytes;
         stream_info[stream_count].recording_count = rec_count;
         stream_count++;

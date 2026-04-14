@@ -6,11 +6,12 @@
 #include <strings.h>
 #include <ctype.h>
 
-#include "web/request_response.h"
-#include "web/web_server.h"
 #define LOG_COMPONENT "HTTP"
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "web/libuv_server.h"
+#include "web/request_response.h"
+#include "web/web_server.h"
 
 #define MAX_HEADER_SIZE 8192
 #define RECV_BUFFER_SIZE 4096
@@ -165,10 +166,10 @@ int http_response_add_header(http_response_t *res, const char *name, const char 
     if (!res || !name || !value) return -1;
     if (res->num_headers >= MAX_HEADERS) return -1;
 
-    strncpy(res->headers[res->num_headers].name, name,
-            sizeof(res->headers[res->num_headers].name) - 1);
-    strncpy(res->headers[res->num_headers].value, value,
-            sizeof(res->headers[res->num_headers].value) - 1);
+    safe_strcpy(res->headers[res->num_headers].name, name,
+            sizeof(res->headers[res->num_headers].name), 0);
+    safe_strcpy(res->headers[res->num_headers].value, value,
+            sizeof(res->headers[res->num_headers].value), 0);
     res->num_headers++;
     return 0;
 }
@@ -204,7 +205,7 @@ int http_response_set_json(http_response_t *res, int status_code, const char *js
     if (!res || !json_str) return -1;
 
     res->status_code = status_code;
-    strncpy(res->content_type, "application/json", sizeof(res->content_type) - 1);
+    safe_strcpy(res->content_type, "application/json", sizeof(res->content_type), 0);
 
     // Add standard headers
     http_response_add_cors_headers(res);
@@ -252,17 +253,14 @@ int http_serve_file(const http_request_t *req, const http_response_t *res,
     // be called from the loop thread)
     if (conn->handler_on_worker) {
         conn->deferred_file_serve = true;
-        strncpy(conn->deferred_file_path, file_path, sizeof(conn->deferred_file_path) - 1);
-        conn->deferred_file_path[sizeof(conn->deferred_file_path) - 1] = '\0';
+        safe_strcpy(conn->deferred_file_path, file_path, sizeof(conn->deferred_file_path), 0);
         if (content_type) {
-            strncpy(conn->deferred_content_type, content_type, sizeof(conn->deferred_content_type) - 1);
-            conn->deferred_content_type[sizeof(conn->deferred_content_type) - 1] = '\0';
+            safe_strcpy(conn->deferred_content_type, content_type, sizeof(conn->deferred_content_type), 0);
         } else {
             conn->deferred_content_type[0] = '\0';
         }
         if (extra_headers) {
-            strncpy(conn->deferred_extra_headers, extra_headers, sizeof(conn->deferred_extra_headers) - 1);
-            conn->deferred_extra_headers[sizeof(conn->deferred_extra_headers) - 1] = '\0';
+            safe_strcpy(conn->deferred_extra_headers, extra_headers, sizeof(conn->deferred_extra_headers), 0);
         } else {
             conn->deferred_extra_headers[0] = '\0';
         }

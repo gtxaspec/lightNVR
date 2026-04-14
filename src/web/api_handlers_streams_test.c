@@ -13,6 +13,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
 #include "video/stream_state.h"
@@ -83,7 +84,7 @@ static int test_stream_connection(const char *url, int protocol,
     }
     
     if (video_stream_index == -1) {
-        snprintf(error_msg, error_msg_size, "No video stream found");
+        safe_strcpy(error_msg, "No video stream found", error_msg_size, 0);
         log_error("%s", error_msg);
         ret = -1;
         goto cleanup;
@@ -96,11 +97,9 @@ static int test_stream_connection(const char *url, int protocol,
     // Get codec name
     const AVCodec *codec = avcodec_find_decoder(codec_params->codec_id);
     if (codec) {
-        strncpy(codec_name, codec->name, codec_name_size - 1);
-        codec_name[codec_name_size - 1] = '\0';
+        safe_strcpy(codec_name, codec->name, codec_name_size, 0);
     } else {
-        strncpy(codec_name, "unknown", codec_name_size - 1);
-        codec_name[codec_name_size - 1] = '\0';
+        safe_strcpy(codec_name, "unknown", codec_name_size, 0);
     }
     
     // Get dimensions
@@ -169,15 +168,13 @@ void handle_test_stream(const http_request_t *req, http_response_t *res) {
     char credentialed_url[MAX_URL_LENGTH];
     if (url_apply_credentials(raw_url, username, password,
                               credentialed_url, sizeof(credentialed_url)) != 0) {
-        strncpy(credentialed_url, raw_url, sizeof(credentialed_url) - 1);
-        credentialed_url[sizeof(credentialed_url) - 1] = '\0';
+        safe_strcpy(credentialed_url, raw_url, sizeof(credentialed_url), 0);
     }
     const char *stream_url = credentialed_url;
 
     char safe_url[MAX_URL_LENGTH];
     if (url_redact_for_logging(raw_url, safe_url, sizeof(safe_url)) != 0) {
-        strncpy(safe_url, "[invalid-url]", sizeof(safe_url) - 1);
-        safe_url[sizeof(safe_url) - 1] = '\0';
+        safe_strcpy(safe_url, "[invalid-url]", sizeof(safe_url), 0);
     }
     log_info("Testing stream connection: url=%s, protocol=%d", safe_url, stream_protocol);
     

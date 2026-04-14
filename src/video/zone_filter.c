@@ -1,10 +1,12 @@
+#include <string.h>
+#include <math.h>
+
 #include "video/zone_filter.h"
 #include "database/db_zones.h"
 #include "database/db_streams.h"
 #include "core/logger.h"
 #include "core/config.h"
-#include <string.h>
-#include <math.h>
+#include "utils/strings.h"
 
 /**
  * Check if a point is inside a polygon using ray casting algorithm
@@ -57,8 +59,7 @@ static bool detection_class_matches(const detection_t *detection, const detectio
 
     // Check if detection label is in the comma-separated filter list
     char filter_copy[256];
-    strncpy(filter_copy, zone->filter_classes, sizeof(filter_copy) - 1);
-    filter_copy[sizeof(filter_copy) - 1] = '\0';
+    safe_strcpy(filter_copy, zone->filter_classes, sizeof(filter_copy), 0);
 
     char *token = strtok(filter_copy, ",");
     while (token) {
@@ -190,9 +191,8 @@ int filter_detections_by_zones(const char *stream_name, detection_result_t *resu
 
             // Set the zone_id for this detection
             if (matched_zone_id) {
-                strncpy(filtered.detections[filtered.count].zone_id, matched_zone_id,
-                       sizeof(filtered.detections[filtered.count].zone_id) - 1);
-                filtered.detections[filtered.count].zone_id[sizeof(filtered.detections[filtered.count].zone_id) - 1] = '\0';
+                safe_strcpy(filtered.detections[filtered.count].zone_id, matched_zone_id,
+                       sizeof(filtered.detections[filtered.count].zone_id), 0);
             }
 
             filtered.count++;
@@ -222,8 +222,7 @@ static bool label_in_list(const char *label, const char *class_list) {
     }
 
     char list_copy[256];
-    strncpy(list_copy, class_list, sizeof(list_copy) - 1);
-    list_copy[sizeof(list_copy) - 1] = '\0';
+    safe_strcpy(list_copy, class_list, sizeof(list_copy), 0);
 
     char *token = strtok(list_copy, ",");
     while (token) {

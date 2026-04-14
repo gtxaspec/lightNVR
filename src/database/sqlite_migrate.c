@@ -16,6 +16,7 @@
 
 #include "database/sqlite_migrate.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 /**
  * Internal migration context
@@ -158,28 +159,25 @@ static int parse_migration_filename(const char *filename, char *version, char *d
     // Version is everything before the underscore
     size_t version_len = underscore - filename;
     if (version_len >= MIGRATE_VERSION_LEN) {
+        log_error("Migration file version too long in %s", filename);
         return -1;
     }
     
     // Verify version is all digits
     for (size_t i = 0; i < version_len; i++) {
         if (!isdigit((unsigned char)filename[i])) {
+            log_warn("Unexpected version character in %s", filename);
             return -1;
         }
     }
     
-    strncpy(version, filename, version_len);
-    version[version_len] = '\0';
+    safe_strcpy(version, filename, MIGRATE_VERSION_LEN, version_len);
 
     // Description is everything after underscore, minus .sql
     const char *desc_start = underscore + 1;
     size_t desc_len = len - 4 - (desc_start - filename);
-    if (desc_len >= MIGRATE_DESC_LEN) {
-        desc_len = MIGRATE_DESC_LEN - 1;
-    }
 
-    strncpy(description, desc_start, desc_len);
-    description[desc_len] = '\0';
+    safe_strcpy(description, desc_start, MIGRATE_DESC_LEN, desc_len);
 
     // Replace underscores with spaces for readability
     for (char *p = description; *p; p++) {
@@ -372,19 +370,13 @@ static char *extract_sql_section(const char *content, const char *marker) {
     if (!end) {
         end = content + strlen(content);
     }
+    // Trim trailing whitespace
+    end = rtrim_pos(start, end - start);
 
     size_t len = end - start;
-    char *sql = malloc(len + 1);
+    char *sql = strndup(start, len);
     if (!sql) {
         return NULL;
-    }
-
-    memcpy(sql, start, len);
-    sql[len] = '\0';
-
-    // Trim trailing whitespace
-    while (len > 0 && isspace((unsigned char)sql[len - 1])) {
-        sql[--len] = '\0';
     }
 
     return sql;
@@ -610,7 +602,7 @@ static int execute_single_statement(sqlite3 *db, const char *sql) {
     // Check for ALTER TABLE ... ADD COLUMN and handle idempotently
     if (strncasecmp(sql, "ALTER TABLE", 11) == 0) {
         // Parse: ALTER TABLE tablename ADD COLUMN colname ...
-        char table[128] = {0};
+        char table[128];
 
         const char *p = sql + 11;
         while (*p && isspace((unsigned char)*p)) p++;
@@ -632,7 +624,7 @@ static int execute_single_statement(sqlite3 *db, const char *sql) {
                 while (*p && isspace((unsigned char)*p)) p++;
 
                 // Extract column name
-                char column[128] = {0};
+                char column[128];
                 i = 0;
                 while (*p && !isspace((unsigned char)*p) && i < 127) {
                     column[i++] = *p++;
@@ -1150,8 +1142,7 @@ int migrate_get_version(const sqlite_migrate_t *ctx, char *version, size_t versi
     // Find the most recent applied migration
     for (int i = ctx->migration_count - 1; i >= 0; i--) {
         if (ctx->migrations[i].status == MIGRATE_STATUS_APPLIED) {
-            strncpy(version, ctx->migrations[i].version, version_len - 1);
-            version[version_len - 1] = '\0';
+            safe_strcpy(version, ctx->migrations[i].version, version_len, 0);
             return 0;
         }
     }

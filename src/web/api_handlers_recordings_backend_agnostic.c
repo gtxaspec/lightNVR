@@ -26,6 +26,7 @@
 #include "database/db_recordings.h"
 #include "database/db_detections.h"
 #include "database/db_auth.h"
+#include "utils/strings.h"
 #include "web/api_handlers_recordings_thumbnail.h"
 #include "storage/storage_manager_streams_cache.h"
 
@@ -237,9 +238,8 @@ void handle_delete_recording(const http_request_t *req, http_response_t *res) {
     }
 
     // Save file path before deleting from database
-    char file_path_copy[256];
-    strncpy(file_path_copy, recording.file_path, sizeof(file_path_copy) - 1);
-    file_path_copy[sizeof(file_path_copy) - 1] = '\0';
+    char file_path_copy[MAX_PATH_LENGTH];
+    safe_strcpy(file_path_copy, recording.file_path, sizeof(file_path_copy), 0);
 
     // Delete from database FIRST
     if (delete_recording_metadata(id) != 0) {
@@ -334,9 +334,8 @@ static void *batch_delete_worker_thread(void *arg) {
                 error_count++;
             } else {
                 // Save file path before deleting from database
-                char file_path_copy[256];
-                strncpy(file_path_copy, recording.file_path, sizeof(file_path_copy) - 1);
-                file_path_copy[sizeof(file_path_copy) - 1] = '\0';
+                char file_path_copy[MAX_PATH_LENGTH];
+                safe_strcpy(file_path_copy, recording.file_path, sizeof(file_path_copy), 0);
 
                 // Delete from database FIRST
                 if (delete_recording_metadata(id) != 0) {
@@ -429,7 +428,7 @@ static void *batch_delete_worker_thread(void *arg) {
         }
 
         if (stream && cJSON_IsString(stream)) {
-            strncpy(stream_name, stream->valuestring, sizeof(stream_name) - 1);
+            safe_strcpy(stream_name, stream->valuestring, sizeof(stream_name), 0);
         }
 
         if (detection && cJSON_IsNumber(detection)) {
@@ -437,15 +436,15 @@ static void *batch_delete_worker_thread(void *arg) {
         }
 
         if (detection_label_item && cJSON_IsString(detection_label_item)) {
-            strncpy(detection_label, detection_label_item->valuestring, sizeof(detection_label) - 1);
+            safe_strcpy(detection_label, detection_label_item->valuestring, sizeof(detection_label), 0);
         }
 
         if (tag_item && cJSON_IsString(tag_item)) {
-            strncpy(tag_filter, tag_item->valuestring, sizeof(tag_filter) - 1);
+            safe_strcpy(tag_filter, tag_item->valuestring, sizeof(tag_filter), 0);
         }
 
         if (capture_method_item && cJSON_IsString(capture_method_item)) {
-            strncpy(capture_method_filter, capture_method_item->valuestring, sizeof(capture_method_filter) - 1);
+            safe_strcpy(capture_method_filter, capture_method_item->valuestring, sizeof(capture_method_filter), 0);
         }
 
         if (detection_label[0] != '\0') {
@@ -519,9 +518,8 @@ static void *batch_delete_worker_thread(void *arg) {
             uint64_t id = recordings[i].id;
 
             // Save file path before deleting from database
-            char file_path_copy[256];
-            strncpy(file_path_copy, recordings[i].file_path, sizeof(file_path_copy) - 1);
-            file_path_copy[sizeof(file_path_copy) - 1] = '\0';
+            char file_path_copy[MAX_PATH_LENGTH];
+            safe_strcpy(file_path_copy, recordings[i].file_path, sizeof(file_path_copy), 0);
 
             // Delete from database FIRST
             if (delete_recording_metadata(id) != 0) {
@@ -646,8 +644,7 @@ void handle_batch_delete_recordings(const http_request_t *req, http_response_t *
         return;
     }
 
-    strncpy(thread_data->job_id, job_id, sizeof(thread_data->job_id) - 1);
-    thread_data->job_id[sizeof(thread_data->job_id) - 1] = '\0';
+    safe_strcpy(thread_data->job_id, job_id, sizeof(thread_data->job_id), 0);
     thread_data->json = json;  // Transfer ownership to thread
 
     // Spawn worker thread

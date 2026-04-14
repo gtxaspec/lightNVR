@@ -1,16 +1,6 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200112L
 
-#include "video/onvif_discovery.h"
-#include "video/onvif_discovery_messages.h"
-#include "video/onvif_discovery_network.h"
-#include "video/onvif_discovery_probe.h"
-#include "video/onvif_discovery_response.h"
-#include "video/onvif_discovery_thread.h"
-#include "video/onvif_device_management.h"
-#include "core/logger.h"
-#include "core/config.h"
-#include "core/curl_init.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +16,18 @@
 #include <stdbool.h>
 #include <fcntl.h>
 #include <curl/curl.h>
+
+#include "video/onvif_discovery.h"
+#include "video/onvif_discovery_messages.h"
+#include "video/onvif_discovery_network.h"
+#include "video/onvif_discovery_probe.h"
+#include "video/onvif_discovery_response.h"
+#include "video/onvif_discovery_thread.h"
+#include "video/onvif_device_management.h"
+#include "core/logger.h"
+#include "core/config.h"
+#include "core/curl_init.h"
+#include "utils/strings.h"
 
 // Maximum number of networks to detect
 #define MAX_DETECTED_NETWORKS 10
@@ -179,7 +181,7 @@ int discover_onvif_devices(const char *network, onvif_device_info_t *devices,
     char ip_addr[16];
     struct in_addr addr;
     int count = 0;
-    char selected_network[64] = {0};
+    char selected_network[64];
     int discovery_sock = -1;
     int broadcast_enabled = 1;
 
@@ -194,16 +196,14 @@ int discover_onvif_devices(const char *network, onvif_device_info_t *devices,
         const char *env_network = getenv("LIGHTNVR_ONVIF_NETWORK");
         if (env_network && strlen(env_network) > 0 && strcmp(env_network, "auto") != 0) {
             log_info("Using ONVIF discovery network from environment variable: %s", env_network);
-            strncpy(selected_network, env_network, sizeof(selected_network) - 1);
-            selected_network[sizeof(selected_network) - 1] = '\0';
+            safe_strcpy(selected_network, env_network, sizeof(selected_network), 0);
             network = selected_network;
         }
         // Priority 2: Check config file setting
         else if (g_config.onvif_discovery_network[0] != '\0' &&
                  strcmp(g_config.onvif_discovery_network, "auto") != 0) {
             log_info("Using ONVIF discovery network from config file: %s", g_config.onvif_discovery_network);
-            strncpy(selected_network, g_config.onvif_discovery_network, sizeof(selected_network) - 1);
-            selected_network[sizeof(selected_network) - 1] = '\0';
+            safe_strcpy(selected_network, g_config.onvif_discovery_network, sizeof(selected_network), 0);
             network = selected_network;
         }
         // Priority 3: Auto-detect networks
@@ -220,8 +220,7 @@ int discover_onvif_devices(const char *network, onvif_device_info_t *devices,
             }
 
             // Use the first detected network
-            strncpy(selected_network, detected_networks[0], sizeof(selected_network) - 1);
-            selected_network[sizeof(selected_network) - 1] = '\0';
+            safe_strcpy(selected_network, detected_networks[0], sizeof(selected_network), 0);
 
             log_info("Auto-detected network for ONVIF discovery: %s", selected_network);
 
@@ -258,14 +257,14 @@ int discover_onvif_devices(const char *network, onvif_device_info_t *devices,
         }
 
         addr.s_addr = htonl(ip);
-        snprintf(ip_addr, sizeof(ip_addr), "%s", inet_ntoa(addr));
+        safe_strcpy(ip_addr, inet_ntoa(addr), sizeof(ip_addr), 0);
         
         // Check if port 3702 (ONVIF) or port 80 (HTTP) is open with a shorter timeout
         if (is_port_open(ip_addr, 3702, 25) || is_port_open(ip_addr, 80, 25)) {
             log_debug("Found potential ONVIF device at %s", ip_addr);
             
             // Add to candidate list
-            strncpy(candidate_ips[candidate_count], ip_addr, 16);
+            safe_strcpy(candidate_ips[candidate_count], ip_addr, 16, 0);
             candidate_count++;
         }
     }
@@ -310,7 +309,7 @@ int discover_onvif_devices(const char *network, onvif_device_info_t *devices,
 
         // Send probes to broadcast address
         addr.s_addr = htonl(broadcast);
-        snprintf(ip_addr, sizeof(ip_addr), "%s", inet_ntoa(addr));
+        safe_strcpy(ip_addr, inet_ntoa(addr), sizeof(ip_addr), 0);
         log_info("Sending discovery probes to broadcast address: %s", ip_addr);
 
         dest_addr.sin_addr.s_addr = htonl(broadcast);
@@ -525,9 +524,9 @@ int try_direct_http_discovery(char candidate_ips[][16], int candidate_count,
                         memset(&devices[count], 0, sizeof(onvif_device_info_t));
 
                         // Set device info
-                        strncpy(devices[count].ip_address, ip, sizeof(devices[count].ip_address) - 1);
-                        strncpy(devices[count].device_service, url, sizeof(devices[count].device_service) - 1);
-                        strncpy(devices[count].endpoint, url, sizeof(devices[count].endpoint) - 1);
+                        safe_strcpy(devices[count].ip_address, ip, sizeof(devices[count].ip_address), 0);
+                        safe_strcpy(devices[count].device_service, url, sizeof(devices[count].device_service), 0);
+                        safe_strcpy(devices[count].endpoint, url, sizeof(devices[count].endpoint), 0);
                         snprintf(devices[count].model, sizeof(devices[count].model),
                                  "Unknown (%s discovery)", is_https ? "HTTPS" : "HTTP");
 

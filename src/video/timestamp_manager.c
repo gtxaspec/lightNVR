@@ -2,15 +2,17 @@
 #define _XOPEN_SOURCE 700
 #define _GNU_SOURCE
 
-#include "video/timestamp_manager.h"
-#include "core/logger.h"
-#include "core/config.h"
 #include <pthread.h>
 #include <string.h>
 #include <time.h>
 #include <errno.h>
 #include <unistd.h>  // For usleep
 #include <libavutil/avutil.h>
+
+#include "video/timestamp_manager.h"
+#include "core/logger.h"
+#include "core/config.h"
+#include "utils/strings.h"
 
 // Structure to track timestamp information per stream
 typedef struct {
@@ -40,9 +42,7 @@ void *get_timestamp_tracker(const char *stream_name) {
     
     // Make a local copy of the stream name to avoid issues with concurrent access
     char local_stream_name[MAX_STREAM_NAME];
-    strncpy(local_stream_name, stream_name, MAX_STREAM_NAME - 1);
-    local_stream_name[MAX_STREAM_NAME - 1] = '\0';
-    
+    safe_strcpy(local_stream_name, stream_name, MAX_STREAM_NAME, 0);
 
     // Look for existing tracker
     for (int i = 0; i < MAX_TIMESTAMP_TRACKERS; i++) {
@@ -55,8 +55,7 @@ void *get_timestamp_tracker(const char *stream_name) {
     // Create new tracker
     for (int i = 0; i < MAX_TIMESTAMP_TRACKERS; i++) {
         if (!timestamp_trackers[i].initialized) {
-            strncpy(timestamp_trackers[i].stream_name, local_stream_name, MAX_STREAM_NAME - 1);
-            timestamp_trackers[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(timestamp_trackers[i].stream_name, local_stream_name, MAX_STREAM_NAME, 0);
             timestamp_trackers[i].last_pts = AV_NOPTS_VALUE;
             timestamp_trackers[i].last_dts = AV_NOPTS_VALUE;
             timestamp_trackers[i].pts_discontinuity_count = 0;
@@ -93,8 +92,7 @@ void *get_timestamp_tracker(const char *stream_name) {
                     (long)(current_time - timestamp_trackers[i].last_keyframe_time));
             
             // Reset the tracker for the new stream
-            strncpy(timestamp_trackers[i].stream_name, local_stream_name, MAX_STREAM_NAME - 1);
-            timestamp_trackers[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(timestamp_trackers[i].stream_name, local_stream_name, MAX_STREAM_NAME, 0);
             timestamp_trackers[i].last_pts = AV_NOPTS_VALUE;
             timestamp_trackers[i].last_dts = AV_NOPTS_VALUE;
             timestamp_trackers[i].pts_discontinuity_count = 0;
@@ -145,8 +143,7 @@ void set_timestamp_tracker_udp_flag(const char *stream_name, bool is_udp) {
     
     // Make a local copy of the stream name to avoid issues with concurrent access
     char local_stream_name[MAX_STREAM_NAME];
-    strncpy(local_stream_name, stream_name, MAX_STREAM_NAME - 1);
-    local_stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(local_stream_name, stream_name, MAX_STREAM_NAME, 0);
 
     // Look for existing tracker
     int found = 0;
@@ -167,8 +164,7 @@ void set_timestamp_tracker_udp_flag(const char *stream_name, bool is_udp) {
         for (int i = 0; i < MAX_TIMESTAMP_TRACKERS; i++) {
             if (!timestamp_trackers[i].initialized) {
                 // Initialize the new tracker
-                strncpy(timestamp_trackers[i].stream_name, local_stream_name, MAX_STREAM_NAME - 1);
-                timestamp_trackers[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+                safe_strcpy(timestamp_trackers[i].stream_name, local_stream_name, MAX_STREAM_NAME, 0);
                 timestamp_trackers[i].last_pts = AV_NOPTS_VALUE;
                 timestamp_trackers[i].last_dts = AV_NOPTS_VALUE;
                 timestamp_trackers[i].pts_discontinuity_count = 0;
@@ -320,8 +316,7 @@ void update_keyframe_time(const char *stream_name) {
         bool created = false;
         for (int i = 0; i < MAX_TIMESTAMP_TRACKERS; i++) {
             if (!timestamp_trackers[i].initialized) {
-                strncpy(timestamp_trackers[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
-                timestamp_trackers[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+                safe_strcpy(timestamp_trackers[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
                 timestamp_trackers[i].last_pts = AV_NOPTS_VALUE;
                 timestamp_trackers[i].last_dts = AV_NOPTS_VALUE;
                 timestamp_trackers[i].pts_discontinuity_count = 0;
@@ -359,8 +354,7 @@ void update_keyframe_time(const char *stream_name) {
                         stream_name);
                 
                 // Reset the tracker for the new stream
-                strncpy(timestamp_trackers[oldest_idx].stream_name, stream_name, MAX_STREAM_NAME - 1);
-                timestamp_trackers[oldest_idx].stream_name[MAX_STREAM_NAME - 1] = '\0';
+                safe_strcpy(timestamp_trackers[oldest_idx].stream_name, stream_name, MAX_STREAM_NAME, 0);
                 timestamp_trackers[oldest_idx].last_pts = AV_NOPTS_VALUE;
                 timestamp_trackers[oldest_idx].last_dts = AV_NOPTS_VALUE;
                 timestamp_trackers[oldest_idx].pts_discontinuity_count = 0;
@@ -429,8 +423,7 @@ int last_keyframe_received(const char *stream_name, time_t *keyframe_time) {
         if (!timestamp_trackers[i].initialized) {
             log_info("Creating new timestamp tracker for stream %s during keyframe check", stream_name);
             
-            strncpy(timestamp_trackers[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
-            timestamp_trackers[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(timestamp_trackers[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
             timestamp_trackers[i].last_pts = AV_NOPTS_VALUE;
             timestamp_trackers[i].last_dts = AV_NOPTS_VALUE;
             timestamp_trackers[i].pts_discontinuity_count = 0;
@@ -491,8 +484,7 @@ time_t get_last_detection_time(const char *stream_name) {
         if (!timestamp_trackers[i].initialized) {
             log_info("Creating new timestamp tracker for stream %s during get_last_detection_time", stream_name);
             
-            strncpy(timestamp_trackers[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
-            timestamp_trackers[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(timestamp_trackers[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
             timestamp_trackers[i].last_pts = AV_NOPTS_VALUE;
             timestamp_trackers[i].last_dts = AV_NOPTS_VALUE;
             timestamp_trackers[i].pts_discontinuity_count = 0;
@@ -547,8 +539,7 @@ void update_last_detection_time(const char *stream_name, time_t detection_time) 
         bool created = false;
         for (int i = 0; i < MAX_TIMESTAMP_TRACKERS; i++) {
             if (!timestamp_trackers[i].initialized) {
-                strncpy(timestamp_trackers[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
-                timestamp_trackers[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+                safe_strcpy(timestamp_trackers[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
                 timestamp_trackers[i].last_pts = AV_NOPTS_VALUE;
                 timestamp_trackers[i].last_dts = AV_NOPTS_VALUE;
                 timestamp_trackers[i].pts_discontinuity_count = 0;
@@ -586,8 +577,7 @@ void update_last_detection_time(const char *stream_name, time_t detection_time) 
                         stream_name);
                 
                 // Reset the tracker for the new stream
-                strncpy(timestamp_trackers[oldest_idx].stream_name, stream_name, MAX_STREAM_NAME - 1);
-                timestamp_trackers[oldest_idx].stream_name[MAX_STREAM_NAME - 1] = '\0';
+                safe_strcpy(timestamp_trackers[oldest_idx].stream_name, stream_name, MAX_STREAM_NAME, 0);
                 timestamp_trackers[oldest_idx].last_pts = AV_NOPTS_VALUE;
                 timestamp_trackers[oldest_idx].last_dts = AV_NOPTS_VALUE;
                 timestamp_trackers[oldest_idx].pts_discontinuity_count = 0;

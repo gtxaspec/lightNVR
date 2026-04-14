@@ -6,6 +6,7 @@
 
 #include "video/detection.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 // SOD RealNet function pointers for dynamic loading
 typedef struct {
@@ -245,9 +246,8 @@ int detect_with_sod_realnet(void *model, const unsigned char *frame_data,
         }
         
         // Copy detection data
-        strncpy(result->detections[valid_count].label, 
-                name ? name : "face", 
-                MAX_LABEL_LENGTH - 1);
+        safe_strcpy(result->detections[valid_count].label, 
+                name ? name : "face", MAX_LABEL_LENGTH, 0);
         
         // Convert confidence from SOD score to 0.0-1.0 range
         // SOD RealNet typically uses a score > 5.0 for good detections

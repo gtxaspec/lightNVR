@@ -1,15 +1,17 @@
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define LOG_COMPONENT "ZonesAPI"
+#include "core/logger.h"
 #include "web/api_handlers_zones.h"
 #include "web/api_handlers.h"
 #include "web/request_response.h"
 #include "web/httpd_utils.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "database/db_zones.h"
-#define LOG_COMPONENT "ZonesAPI"
-#include "core/logger.h"
 #include <cjson/cJSON.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
 
 /**
  * Handler for GET /api/streams/:stream_name/zones
@@ -185,14 +187,13 @@ void handle_post_zones(const http_request_t *req, http_response_t *res) {
         }
 
         // Copy basic fields
-        strncpy(zone->id, id->valuestring, MAX_ZONE_ID - 1);
-        strncpy(zone->stream_name, stream_name, MAX_STREAM_NAME - 1);
-        strncpy(zone->name, name->valuestring, MAX_ZONE_NAME - 1);
+        safe_strcpy(zone->id, id->valuestring, MAX_ZONE_ID, 0);
+        safe_strcpy(zone->stream_name, stream_name, MAX_STREAM_NAME, 0);
+        safe_strcpy(zone->name, name->valuestring, MAX_ZONE_NAME, 0);
         zone->enabled = enabled && cJSON_IsTrue(enabled);
 
         if (color && cJSON_IsString(color)) {
-            strncpy(zone->color, color->valuestring, 7);
-            zone->color[7] = '\0';
+            safe_strcpy(zone->color, color->valuestring, 8, 0);
         } else {
             strcpy(zone->color, "#3b82f6");
         }
@@ -220,8 +221,7 @@ void handle_post_zones(const http_request_t *req, http_response_t *res) {
 
         // Parse optional fields
         if (filter_classes && cJSON_IsString(filter_classes)) {
-            strncpy(zone->filter_classes, filter_classes->valuestring, 255);
-            zone->filter_classes[255] = '\0';
+            safe_strcpy(zone->filter_classes, filter_classes->valuestring, 256, 0);
         } else {
             zone->filter_classes[0] = '\0';
         }

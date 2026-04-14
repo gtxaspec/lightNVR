@@ -14,6 +14,7 @@
 #include "web/request_response.h"
 #define LOG_COMPONENT "UsersAPI"
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "database/db_auth.h"
 #include "database/db_core.h"
 #include "database/db_schema_cache.h"
@@ -70,7 +71,7 @@ static int prepare_user_select_stmt(sqlite3 *db, const char *suffix, sqlite3_stm
     bool has_allowed_tags = cached_column_exists("users", "allowed_tags");
     bool has_allowed_login_cidrs = cached_column_exists("users", "allowed_login_cidrs");
 
-    char sql[768] = {0};
+    char sql[768];
     int written = snprintf(sql, sizeof(sql),
                            "SELECT id, username, email, role, api_key, created_at, "
                            "updated_at, last_login, is_active, password_change_locked, %s, %s, %s "
@@ -90,21 +91,18 @@ static void populate_user_from_stmt(sqlite3_stmt *stmt, user_t *user) {
     memset(user, 0, sizeof(*user));
 
     user->id = sqlite3_column_int64(stmt, 0);
-    strncpy(user->username, (const char *)sqlite3_column_text(stmt, 1), sizeof(user->username) - 1);
-    user->username[sizeof(user->username) - 1] = '\0';
+    safe_strcpy(user->username, (const char *)sqlite3_column_text(stmt, 1), sizeof(user->username), 0);
 
     const char *email = (const char *)sqlite3_column_text(stmt, 2);
     if (email) {
-        strncpy(user->email, email, sizeof(user->email) - 1);
-        user->email[sizeof(user->email) - 1] = '\0';
+        safe_strcpy(user->email, email, sizeof(user->email), 0);
     }
 
     user->role = (user_role_t)sqlite3_column_int(stmt, 3);
 
     const char *api_key = (const char *)sqlite3_column_text(stmt, 4);
     if (api_key) {
-        strncpy(user->api_key, api_key, sizeof(user->api_key) - 1);
-        user->api_key[sizeof(user->api_key) - 1] = '\0';
+        safe_strcpy(user->api_key, api_key, sizeof(user->api_key), 0);
     }
 
     user->created_at = sqlite3_column_int64(stmt, 5);
@@ -116,15 +114,13 @@ static void populate_user_from_stmt(sqlite3_stmt *stmt, user_t *user) {
 
     const char *allowed_tags = (const char *)sqlite3_column_text(stmt, 11);
     if (allowed_tags && allowed_tags[0] != '\0') {
-        strncpy(user->allowed_tags, allowed_tags, sizeof(user->allowed_tags) - 1);
-        user->allowed_tags[sizeof(user->allowed_tags) - 1] = '\0';
+        safe_strcpy(user->allowed_tags, allowed_tags, sizeof(user->allowed_tags), 0);
         user->has_tag_restriction = true;
     }
 
     const char *allowed_login_cidrs = (const char *)sqlite3_column_text(stmt, 12);
     if (allowed_login_cidrs && allowed_login_cidrs[0] != '\0') {
-        strncpy(user->allowed_login_cidrs, allowed_login_cidrs, sizeof(user->allowed_login_cidrs) - 1);
-        user->allowed_login_cidrs[sizeof(user->allowed_login_cidrs) - 1] = '\0';
+        safe_strcpy(user->allowed_login_cidrs, allowed_login_cidrs, sizeof(user->allowed_login_cidrs), 0);
         user->has_login_cidr_restriction = true;
     }
 }
@@ -360,9 +356,9 @@ void handle_users_create(const http_request_t *req, http_response_t *res) {
     }
 
     // Make a copy of the username to use after the JSON object is freed
-    char username_copy[64] = {0};
+    char username_copy[64];
     const char *username = username_json->valuestring;
-    strncpy(username_copy, username, sizeof(username_copy) - 1);
+    safe_strcpy(username_copy, username, sizeof(username_copy), 0);
 
     const char *password = password_json->valuestring;
     const char *email = (email_json && cJSON_IsString(email_json)) ? email_json->valuestring : NULL;
@@ -399,7 +395,7 @@ void handle_users_create(const http_request_t *req, http_response_t *res) {
             has_at_create = true;
             at_create_is_null = true;
         } else if (cJSON_IsString(allowed_tags_create_json)) {
-            strncpy(allowed_tags_buf, allowed_tags_create_json->valuestring, sizeof(allowed_tags_buf) - 1);
+            safe_strcpy(allowed_tags_buf, allowed_tags_create_json->valuestring, sizeof(allowed_tags_buf), 0);
             has_at_create = true;
         }
     }
@@ -412,8 +408,8 @@ void handle_users_create(const http_request_t *req, http_response_t *res) {
             has_cidr_create = true;
             cidr_create_is_null = true;
         } else if (cJSON_IsString(allowed_login_cidrs_create_json)) {
-            strncpy(allowed_login_cidrs_buf, allowed_login_cidrs_create_json->valuestring,
-                    sizeof(allowed_login_cidrs_buf) - 1);
+            safe_strcpy(allowed_login_cidrs_buf, allowed_login_cidrs_create_json->valuestring,
+                    sizeof(allowed_login_cidrs_buf), 0);
             has_cidr_create = true;
         } else {
             cJSON_Delete(json_req);

@@ -9,6 +9,7 @@
 #include "video/stream_state.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "video/stream_reader.h"
 #include "video/hls_streaming.h"
 #include "video/mp4_recording.h"
@@ -76,8 +77,7 @@ void shutdown_stream_state_manager(void) {
         if (stream_states[i]) {
             // Make a local copy of the stream name for logging
             char stream_name[MAX_STREAM_NAME];
-            strncpy(stream_name, stream_states[i]->name, MAX_STREAM_NAME - 1);
-            stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(stream_name, stream_states[i]->name, MAX_STREAM_NAME, 0);
 
             // Stop the stream if it's active
             if (stream_states[i]->state == STREAM_STATE_ACTIVE ||
@@ -170,8 +170,7 @@ stream_state_manager_t *create_stream_state(const stream_config_t *config) {
     memcpy(&state->config, config, sizeof(stream_config_t));
 
     // Initialize name
-    strncpy(state->name, config->name, MAX_STREAM_NAME - 1);
-    state->name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(state->name, config->name, MAX_STREAM_NAME, 0);
 
     // Initialize state
     state->state = STREAM_STATE_INACTIVE;
@@ -621,8 +620,7 @@ int stop_stream_with_state(stream_state_manager_t *state, bool wait_for_completi
 
     // Get stream name for logging
     char stream_name[MAX_STREAM_NAME];
-    strncpy(stream_name, state->name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, state->name, MAX_STREAM_NAME, 0);
 
     // Only disable callbacks if we're stopping the entire stream
     // If we're just disabling recording, we still want to keep callbacks enabled for HLS streaming
@@ -875,8 +873,7 @@ int remove_stream_state(stream_state_manager_t *state) {
 
     // Save stream name for logging
     char stream_name[MAX_STREAM_NAME];
-    strncpy(stream_name, state->name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, state->name, MAX_STREAM_NAME, 0);
 
     // Check reference count
     pthread_mutex_lock(&state->mutex);

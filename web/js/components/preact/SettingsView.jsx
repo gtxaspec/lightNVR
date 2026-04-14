@@ -36,6 +36,7 @@ export function SettingsView() {
     dbBackupRetentionCount: '24',
     dbPostBackupScript: '',
     webPort: '8080',
+    webBindIp: '0.0.0.0',
     webThreadPoolSize: '',   // populated from API; blank = use server default (2x cores)
     maxStreams: '32',
     authEnabled: true,
@@ -258,6 +259,7 @@ export function SettingsView() {
         dbBackupRetentionCount: settingsData.db_backup_retention_count?.toString() || '24',
         dbPostBackupScript: settingsData.db_post_backup_script || '',
         webPort: settingsData.web_port?.toString() || '',
+        webBindIp: settingsData.web_bind_ip?.toString() || '0.0.0.0',
         webThreadPoolSize: settingsData.web_thread_pool_size?.toString() || '',
         maxStreams: settingsData.max_streams?.toString() || '32',
         authEnabled: settingsData.web_auth_enabled || false,
@@ -353,6 +355,7 @@ export function SettingsView() {
       db_backup_retention_count: Number.isNaN(parsedDbBackupRetentionCount) ? 0 : parsedDbBackupRetentionCount,
       db_post_backup_script: settings.dbPostBackupScript,
       web_port: parseInt(settings.webPort, 10),
+      web_bind_ip: settings.webBindIp,
       web_thread_pool_size: Number.isNaN(webThreadPoolSize) ? undefined : webThreadPoolSize,
       max_streams: Number.isNaN(parsedMaxStreams) ? 32 : parsedMaxStreams,
       web_auth_enabled: settings.authEnabled,
@@ -786,6 +789,19 @@ export function SettingsView() {
               value={settings.webPort}
               onChange={handleInputChange}
               disabled={!canModifySettings}
+            />
+          </div>
+          <div class="setting grid grid-cols-1 md:grid-cols-3 gap-4 items-center mb-4">
+            <label for="setting-web-bind-ip" class="font-medium">{t('settings.webBindIp')}</label>
+            <input
+              type="text"
+              id="setting-web-bind-ip"
+              name="webBindIp"
+              class="col-span-2 p-2 border border-input rounded bg-background text-foreground disabled:opacity-60 disabled:cursor-not-allowed"
+              value={settings.webBindIp}
+              onChange={handleInputChange}
+              disabled={!canModifySettings}
+              placeholder="0.0.0.0"
             />
           </div>
           <div class="setting grid grid-cols-1 md:grid-cols-3 gap-4 items-center mb-4">

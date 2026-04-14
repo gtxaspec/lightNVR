@@ -9,9 +9,10 @@
 #include <time.h>
 #include <sys/random.h>
 
-#include "web/batch_delete_progress.h"
 #define LOG_COMPONENT "RecordingsAPI"
 #include "core/logger.h"
+#include "utils/strings.h"
+#include "web/batch_delete_progress.h"
 
 /**
  * @brief Generate a simple UUID v4 without external dependencies
@@ -192,8 +193,7 @@ int batch_delete_progress_create_job(int total, char *job_id_out) {
     g_jobs[slot].is_active = true;
     
     // Copy job ID to output
-    strncpy(job_id_out, g_jobs[slot].job_id, 64);
-    job_id_out[63] = '\0';
+    safe_strcpy(job_id_out, g_jobs[slot].job_id, 64, 0);
     
     pthread_mutex_unlock(&g_jobs_mutex);
     
@@ -263,8 +263,7 @@ int batch_delete_progress_update(const char *job_id, int current, int succeeded,
     g_jobs[slot].failed = failed;
     
     if (status_message) {
-        strncpy(g_jobs[slot].status_message, status_message, sizeof(g_jobs[slot].status_message) - 1);
-        g_jobs[slot].status_message[sizeof(g_jobs[slot].status_message) - 1] = '\0';
+        safe_strcpy(g_jobs[slot].status_message, status_message, sizeof(g_jobs[slot].status_message), 0);
     }
     
     g_jobs[slot].updated_at = time(NULL);
@@ -339,8 +338,7 @@ int batch_delete_progress_error(const char *job_id, const char *error_message) {
     g_jobs[slot].status = BATCH_DELETE_STATUS_ERROR;
     
     if (error_message) {
-        strncpy(g_jobs[slot].error_message, error_message, sizeof(g_jobs[slot].error_message) - 1);
-        g_jobs[slot].error_message[sizeof(g_jobs[slot].error_message) - 1] = '\0';
+        safe_strcpy(g_jobs[slot].error_message, error_message, sizeof(g_jobs[slot].error_message), 0);
         
         snprintf(g_jobs[slot].status_message, sizeof(g_jobs[slot].status_message),
                  "Error: %s", error_message);

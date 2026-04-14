@@ -38,8 +38,10 @@
 #define LOG_COMPONENT "SystemAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
 #include "core/version.h"
 #include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "database/db_streams.h"
 #include "database/db_recordings.h"
@@ -56,6 +58,7 @@ extern bool get_go2rtc_memory_usage(unsigned long long *memory_usage);
 // External declarations
 extern bool daemon_mode;
 
+// Copies the src string after removing whitespace and single- or double-quotes.
 static void trim_copy_value(char *dest, size_t dest_size, const char *src) {
     if (!dest || dest_size == 0) {
         return;
@@ -66,26 +69,24 @@ static void trim_copy_value(char *dest, size_t dest_size, const char *src) {
         return;
     }
 
-    while (*src && isspace((unsigned char)*src)) {
-        src++;
+    const char *start = ltrim_pos(src);
+    // rtrim_pos returns a pointer into src one *after* the last printing
+    // character, so we need to subtract 1 to check the last characters
+    // in the string.
+    const char *end = rtrim_pos(src, 0) - 1;
+
+    if ((end - start) >= 2 && ((*start == '"' && *end == '"') ||
+                     (*start == '\'' && *end == '\''))) {
+        start++;
+        end--;
     }
 
-    size_t len = strlen(src);
-    while (len > 0 && isspace((unsigned char)src[len - 1])) {
-        len--;
-    }
-
-    if (len >= 2 && ((src[0] == '"' && src[len - 1] == '"') ||
-                     (src[0] == '\'' && src[len - 1] == '\''))) {
-        src++;
-        len -= 2;
-    }
-
+    size_t len = end - start;
     if (len >= dest_size) {
         len = dest_size - 1;
     }
 
-    memcpy(dest, src, len);
+    memcpy(dest, start, len);
     dest[len] = '\0';
 }
 
@@ -180,15 +181,15 @@ static void add_versions_to_json(cJSON *info) {
         char os_version[256] = {0};
 
         if (read_os_release_value("PRETTY_NAME", pretty_name, sizeof(pretty_name))) {
-            snprintf(os_version, sizeof(os_version), "%s", pretty_name);
+            safe_strcpy(os_version, pretty_name, sizeof(os_version), 0);
         } else if (read_os_release_value("NAME", name, sizeof(name))) {
             if (read_os_release_value("VERSION_ID", version_id, sizeof(version_id))) {
                 snprintf(os_version, sizeof(os_version), "%s %s", name, version_id);
             } else {
-                snprintf(os_version, sizeof(os_version), "%s", name);
+                safe_strcpy(os_version, name, sizeof(os_version), 0);
             }
         } else {
-            snprintf(os_version, sizeof(os_version), "%s", system_info.sysname);
+            safe_strcpy(os_version, system_info.sysname, sizeof(os_version), 0);
         }
 
         snprintf(details, sizeof(details), "%s %s • %s",
@@ -224,7 +225,7 @@ static void add_versions_to_json(cJSON *info) {
             snprintf(curl_details, sizeof(curl_details), "%s • zlib %s",
                      curl_info->ssl_version, curl_info->libz_version);
         } else if (curl_info->ssl_version) {
-            snprintf(curl_details, sizeof(curl_details), "%s", curl_info->ssl_version);
+            safe_strcpy(curl_details, curl_info->ssl_version, sizeof(curl_details), 0);
         } else if (curl_info->libz_version) {
             snprintf(curl_details, sizeof(curl_details), "zlib %s", curl_info->libz_version);
         }
@@ -1140,13 +1141,13 @@ void handle_get_system_info(const http_request_t *req, http_response_t *res) {
                                     if (ioc_sock >= 0) {
                                         struct ifreq ifr;
                                         memset(&ifr, 0, sizeof(ifr));
-                                        strncpy(ifr.ifr_name, safe_name, IFNAMSIZ - 1);
+                                        safe_strcpy(ifr.ifr_name, safe_name, IFNAMSIZ, 0);
                                         if (ioctl(ioc_sock, SIOCGIFADDR, &ifr) == 0) {
                                             struct sockaddr_in *sin =
                                                 (struct sockaddr_in *)&ifr.ifr_addr;
                                             if (inet_ntop(AF_INET, &sin->sin_addr,
                                                           ip_addr, sizeof(ip_addr)) == NULL) {
-                                                strncpy(ip_addr, "Unknown", sizeof(ip_addr) - 1);
+                                                safe_strcpy(ip_addr, "Unknown", sizeof(ip_addr), 0);
                                             }
                                         }
                                         close(ioc_sock);
@@ -1254,7 +1255,7 @@ void handle_get_system_info(const http_request_t *req, http_response_t *res) {
         // Compute recordings directory size using native filesystem traversal.
         // storage_path is NEVER passed to a shell command (prevents injection).
         char recordings_dir[512];
-        snprintf(recordings_dir, sizeof(recordings_dir), "%s", g_config.storage_path);
+        safe_strcpy(recordings_dir, g_config.storage_path, sizeof(recordings_dir), 0);
         /* strip any trailing slash so lstat/opendir work consistently */
         size_t rd_len = strlen(recordings_dir);
         if (rd_len > 1 && recordings_dir[rd_len - 1] == '/')
@@ -1441,7 +1442,11 @@ void handle_post_system_backup(const http_request_t *req, http_response_t *res) 
     snprintf(backup_path, sizeof(backup_path), "%s/backups", g_config.web_root);
 
     // Create backups directory if it doesn't exist
-    mkdir(backup_path, 0755);
+    if (ensure_dir(backup_path)) {
+        log_error("Failed to create backup directory %s: %s", backup_path, strerror(errno));
+        http_response_set_json_error(res, 500, "Failed to create backup directory");
+        return;
+    }
 
     // Append filename to path
     snprintf(backup_path, sizeof(backup_path), "%s/backups/%s", g_config.web_root, backup_filename);
@@ -1517,6 +1522,7 @@ void handle_post_system_backup(const http_request_t *req, http_response_t *res) 
 
     // Add config properties
     cJSON_AddNumberToObject(config, "web_port", g_config.web_port);
+    cJSON_AddStringToObject(config, "web_bind_ip", g_config.web_bind_ip);
     cJSON_AddStringToObject(config, "web_root", g_config.web_root);
     cJSON_AddStringToObject(config, "log_file", g_config.log_file);
     cJSON_AddStringToObject(config, "pid_file", g_config.pid_file);

@@ -16,7 +16,9 @@
 #include "ini.h"
 #include "core/config.h"
 #include "core/logger.h"
+#include "core/path_utils.h"
 #include "database/database_manager.h"
+#include "utils/strings.h"
 
 // Global configuration variable
 config_t g_config;
@@ -108,6 +110,7 @@ static const env_config_mapping_t env_config_mappings[] = {
 
     // Web server settings
     {"WEB_PORT",           CONFIG_TYPE_INT,    CONFIG_OFFSET(web_port),           0,   NULL, 8080, false},
+    {"WEB_BIND_IP",        CONFIG_TYPE_STRING, CONFIG_OFFSET(web_bind_ip),        32,  "0.0.0.0", 0, false},
     {"WEB_AUTH_ENABLED",   CONFIG_TYPE_BOOL,   CONFIG_OFFSET(web_auth_enabled),   0,   NULL, 0, true},
     {"WEB_USERNAME",       CONFIG_TYPE_STRING, CONFIG_OFFSET(web_username),       32,  "admin", 0, false},
     {"WEB_TRUSTED_PROXY_CIDRS", CONFIG_TYPE_STRING, CONFIG_OFFSET(trusted_proxy_cidrs), WEB_TRUSTED_PROXY_CIDRS_MAX, "", 0, false},
@@ -245,8 +248,7 @@ static void apply_env_overrides(config_t *config) {
             }
             case CONFIG_TYPE_STRING: {
                 char *str_ptr = (char *)field_ptr;
-                strncpy(str_ptr, env_value, mapping->size - 1);
-                str_ptr[mapping->size - 1] = '\0';
+                safe_strcpy(str_ptr, env_value, mapping->size, 0);
                 // Log with masked value for sensitive fields
                 if (strstr(mapping->env_name, "PASSWORD") != NULL ||
                     strstr(mapping->env_name, "SECRET") != NULL) {
@@ -306,17 +308,17 @@ void load_default_config(config_t *config) {
     }
     
     // General settings
-    snprintf(config->pid_file, MAX_PATH_LENGTH, "/var/run/lightnvr.pid");
-    snprintf(config->log_file, MAX_PATH_LENGTH, "/var/log/lightnvr.log");
+    safe_strcpy(config->pid_file, "/var/run/lightnvr.pid", MAX_PATH_LENGTH, 0);
+    safe_strcpy(config->log_file, "/var/log/lightnvr.log", MAX_PATH_LENGTH, 0);
     config->log_level = LOG_LEVEL_INFO;
 
     // Syslog settings
     config->syslog_enabled = false;
-    snprintf(config->syslog_ident, sizeof(config->syslog_ident), "lightnvr");
+    safe_strcpy(config->syslog_ident, "lightnvr", sizeof(config->syslog_ident), 0);
     config->syslog_facility = LOG_USER;
 
     // Storage settings
-    snprintf(config->storage_path, MAX_PATH_LENGTH, "/var/lib/lightnvr/recordings");
+    safe_strcpy(config->storage_path, "/var/lib/lightnvr/recordings", MAX_PATH_LENGTH, 0);
     config->storage_path_hls[0] = '\0'; // Empty by default, will use storage_path if not specified
     config->max_storage_size = 0; // 0 means unlimited
     config->retention_days = 30;
@@ -327,34 +329,35 @@ void load_default_config(config_t *config) {
 
     // MP4 recording settings
     config->record_mp4_directly = false;
-    snprintf(config->mp4_storage_path, sizeof(config->mp4_storage_path), "/var/lib/lightnvr/recordings/mp4");
+    safe_strcpy(config->mp4_storage_path, "/var/lib/lightnvr/recordings/mp4", sizeof(config->mp4_storage_path), 0);
     config->mp4_segment_duration = 900; // 15 minutes
     config->mp4_retention_days = 30;
 
     // Models settings
-    snprintf(config->models_path, MAX_PATH_LENGTH, "/var/lib/lightnvr/models");
+    safe_strcpy(config->models_path, "/var/lib/lightnvr/models", MAX_PATH_LENGTH, 0);
     
     // API detection settings
-    snprintf(config->api_detection_url, MAX_URL_LENGTH, "http://localhost:8000/detect");
-    snprintf(config->api_detection_backend, 32, "onnx"); // Default to ONNX backend
+    safe_strcpy(config->api_detection_url, "http://localhost:8000/detect", MAX_URL_LENGTH, 0);
+    safe_strcpy(config->api_detection_backend, "onnx", 32, 0); // Default to ONNX backend
 
     // Global detection defaults
     config->default_detection_threshold = 50;  // 50% confidence threshold
     config->default_pre_detection_buffer = 5;   // 5 seconds before detection
     config->default_post_detection_buffer = 10; // 10 seconds after detection
-    snprintf(config->default_buffer_strategy, 32, "auto"); // Auto-select buffer strategy
+    safe_strcpy(config->default_buffer_strategy, "auto", 32, 0); // Auto-select buffer strategy
 
     // Database settings
-    snprintf(config->db_path, MAX_PATH_LENGTH, "/var/lib/lightnvr/lightnvr.db");
+    safe_strcpy(config->db_path, "/var/lib/lightnvr/lightnvr.db", MAX_PATH_LENGTH, 0);
     config->db_backup_interval_minutes = 60;
     config->db_backup_retention_count = 24;
     config->db_post_backup_script[0] = '\0';
     
     // Web server settings
     config->web_port = 8080;
-    snprintf(config->web_root, MAX_PATH_LENGTH, "/var/lib/lightnvr/www");
+    safe_strcpy(config->web_bind_ip, "0.0.0.0", 32, 0);
+    safe_strcpy(config->web_root, "/var/lib/lightnvr/www", MAX_PATH_LENGTH, 0);
     config->web_auth_enabled = true;
-    snprintf(config->web_username, 32, "admin");
+    safe_strcpy(config->web_username, "admin", 32, 0);
     // No default password - will be generated randomly on first run
     config->web_password[0] = '\0';
     config->webrtc_disabled = false; // WebRTC is enabled by default
@@ -383,7 +386,7 @@ void load_default_config(config_t *config) {
     // Memory optimization
     config->buffer_size = 1024; // 1024 KB (1 MB) buffer size
     config->use_swap = true;
-    snprintf(config->swap_file, MAX_PATH_LENGTH, "/var/lib/lightnvr/swap");
+    safe_strcpy(config->swap_file, "/var/lib/lightnvr/swap", MAX_PATH_LENGTH, 0);
     config->swap_size = (uint64_t)128 * 1024 * 1024; // 128MB swap
     
     // Hardware acceleration
@@ -397,14 +400,14 @@ void load_default_config(config_t *config) {
     // CMake passes these as string literals already (e.g. -DGO2RTC_BINARY_PATH_RAW="/usr/local/bin/go2rtc"),
     // so they must be used directly — NOT through STRINGIFY, which would double-quote the value.
 #ifdef GO2RTC_BINARY_PATH_RAW
-    snprintf(config->go2rtc_binary_path, MAX_PATH_LENGTH, "%s", GO2RTC_BINARY_PATH_RAW);
+    safe_strcpy(config->go2rtc_binary_path, GO2RTC_BINARY_PATH_RAW, MAX_PATH_LENGTH, 0);
 #else
-    snprintf(config->go2rtc_binary_path, MAX_PATH_LENGTH, "/usr/local/bin/go2rtc");
+    safe_strcpy(config->go2rtc_binary_path, "/usr/local/bin/go2rtc", MAX_PATH_LENGTH, 0);
 #endif
 #ifdef GO2RTC_CONFIG_DIR_RAW
-    snprintf(config->go2rtc_config_dir, MAX_PATH_LENGTH, "%s", GO2RTC_CONFIG_DIR_RAW);
+    safe_strcpy(config->go2rtc_config_dir, GO2RTC_CONFIG_DIR_RAW, MAX_PATH_LENGTH, 0);
 #else
-    snprintf(config->go2rtc_config_dir, MAX_PATH_LENGTH, "/etc/lightnvr/go2rtc");
+    safe_strcpy(config->go2rtc_config_dir, "/etc/lightnvr/go2rtc", MAX_PATH_LENGTH, 0);
 #endif
     config->go2rtc_api_port = 1984;
     config->go2rtc_rtsp_port = 8554;  // Default RTSP listen port
@@ -415,7 +418,7 @@ void load_default_config(config_t *config) {
     config->go2rtc_webrtc_enabled = true;  // Enable WebRTC by default
     config->go2rtc_webrtc_listen_port = 8555;  // Default WebRTC listen port
     config->go2rtc_stun_enabled = true;  // Enable STUN by default for NAT traversal
-    snprintf(config->go2rtc_stun_server, sizeof(config->go2rtc_stun_server), "stun.l.google.com:19302");
+    safe_strcpy(config->go2rtc_stun_server, "stun.l.google.com:19302", sizeof(config->go2rtc_stun_server), 0);
     config->go2rtc_external_ip[0] = '\0';  // Empty by default (auto-detect)
     config->go2rtc_ice_servers[0] = '\0';  // Empty by default (use STUN server)
 
@@ -428,7 +431,7 @@ void load_default_config(config_t *config) {
     // ONVIF discovery settings
     config->onvif_discovery_enabled = false;  // Disabled by default
     config->onvif_discovery_interval = 300;   // 5 minutes between scans
-    snprintf(config->onvif_discovery_network, sizeof(config->onvif_discovery_network), "auto");
+    safe_strcpy(config->onvif_discovery_network, "auto", sizeof(config->onvif_discovery_network), 0);
 
     // Initialize default values for detection-based recording in streams
     for (int i = 0; i < config->max_streams; i++) {
@@ -439,8 +442,7 @@ void load_default_config(config_t *config) {
         config->streams[i].pre_detection_buffer = 5; // 5 seconds before detection
         config->streams[i].post_detection_buffer = 10; // 10 seconds after detection
         config->streams[i].detection_api_url[0] = '\0'; // Empty = use global config
-        strncpy(config->streams[i].detection_object_filter, "none", sizeof(config->streams[i].detection_object_filter) - 1);
-        config->streams[i].detection_object_filter_list[0] = '\0';
+        safe_strcpy(config->streams[i].detection_object_filter, "none", sizeof(config->streams[i].detection_object_filter), 0);
         config->streams[i].streaming_enabled = true; // Enable streaming by default
         config->streams[i].record_audio = false; // Disable audio recording by default
 
@@ -457,8 +459,8 @@ void load_default_config(config_t *config) {
     config->mqtt_broker_port = 1883;            // Default MQTT port
     config->mqtt_username[0] = '\0';            // Optional
     config->mqtt_password[0] = '\0';            // Optional
-    snprintf(config->mqtt_client_id, sizeof(config->mqtt_client_id), "lightnvr");
-    snprintf(config->mqtt_topic_prefix, sizeof(config->mqtt_topic_prefix), "lightnvr");
+    safe_strcpy(config->mqtt_client_id, "lightnvr", sizeof(config->mqtt_client_id), 0);
+    safe_strcpy(config->mqtt_topic_prefix, "lightnvr", sizeof(config->mqtt_topic_prefix), 0);
     config->mqtt_tls_enabled = false;           // No TLS by default
     config->mqtt_keepalive = 60;                // 60 seconds keepalive
     config->mqtt_qos = 1;                       // QoS 1 (at least once)
@@ -466,63 +468,21 @@ void load_default_config(config_t *config) {
 
     // Home Assistant MQTT auto-discovery settings
     config->mqtt_ha_discovery = false;          // Disabled by default
-    snprintf(config->mqtt_ha_discovery_prefix, sizeof(config->mqtt_ha_discovery_prefix), "homeassistant");
+    safe_strcpy(config->mqtt_ha_discovery_prefix, "homeassistant", sizeof(config->mqtt_ha_discovery_prefix), 0);
     config->mqtt_ha_snapshot_interval = 30;     // 30 seconds default
-}
-
-// Create directory if it doesn't exist
-static int create_directory(const char *path) {
-    struct stat st;
-    
-    // Check if directory already exists
-    if (stat(path, &st) == 0) {
-        if (S_ISDIR(st.st_mode)) {
-            return 0; // Directory exists
-        } else {
-            return -1; // Path exists but is not a directory
-        }
-    }
-    
-    // Create directory with permissions 0755
-    if (mkdir(path, 0755) != 0) {
-        if (errno == ENOENT) {
-            // Parent directory doesn't exist, try to create it recursively
-            char *parent_path = strdup(path);
-            if (!parent_path) {
-                return -1;
-            }
-            
-            const char *parent_dir = dirname(parent_path);
-            int ret = create_directory(parent_dir);
-            free(parent_path);
-            
-            if (ret != 0) {
-                return -1;
-            }
-            
-            // Try again to create the directory
-            if (mkdir(path, 0755) != 0) {
-                return -1;
-            }
-        } else {
-            return -1;
-        }
-    }
-    
-    return 0;
 }
 
 // Ensure all required directories exist
 static int ensure_directories(const config_t *config) {
     // Storage directory
-    if (create_directory(config->storage_path) != 0) {
+    if (mkdir_recursive(config->storage_path) != 0) {
         log_error("Failed to create storage directory: %s", config->storage_path);
         return -1;
     }
     
     // HLS storage directory if specified
     if (config->storage_path_hls[0] != '\0') {
-        if (create_directory(config->storage_path_hls) != 0) {
+        if (mkdir_recursive(config->storage_path_hls) != 0) {
             log_error("Failed to create HLS storage directory: %s", config->storage_path_hls);
             return -1;
         }
@@ -530,32 +490,28 @@ static int ensure_directories(const config_t *config) {
     }
     
     // Models directory
-    if (create_directory(config->models_path) != 0) {
+    if (mkdir_recursive(config->models_path) != 0) {
         log_error("Failed to create models directory: %s", config->models_path);
         return -1;
     }
     
     // Database directory
-    char db_dir[MAX_PATH_LENGTH];
-    strncpy(db_dir, config->db_path, MAX_PATH_LENGTH);
-    char *dir = dirname(db_dir);
-    if (create_directory(dir) != 0) {
-        log_error("Failed to create database directory: %s", dir);
+    // Some dirname implementations actually modify the path argument and
+    // will segfault when passed a read-only const string.
+    if (ensure_path(config->db_path)) {
+        log_error("Failed to create database directory: %s", config->db_path);
         return -1;
     }
     
     // Web root directory
-    if (create_directory(config->web_root) != 0) {
+    if (mkdir_recursive(config->web_root) != 0) {
         log_error("Failed to create web root directory: %s", config->web_root);
         return -1;
     }
     
     // Log directory
-    char log_dir[MAX_PATH_LENGTH];
-    strncpy(log_dir, config->log_file, MAX_PATH_LENGTH);
-    dir = dirname(log_dir);
-    if (create_directory(dir) != 0) {
-        log_error("Failed to create log directory: %s", dir);
+    if (ensure_path(config->log_file)) {
+        log_error("Failed to create log directory: %s", config->log_file);
         return -1;
     }
     
@@ -564,7 +520,7 @@ static int ensure_directories(const config_t *config) {
     if (cfg_log_fd < 0) {
         log_warn("Log file %s is not writable: %s", config->log_file, strerror(errno));
         // Try to fix log directory permissions
-        if (chmod(dir, 0755) != 0) {
+        if (chmod_parent(config->log_file, 0755)) {
             log_warn("Failed to change log directory permissions: %s", strerror(errno));
         }
     } else {
@@ -645,15 +601,15 @@ static int config_ini_handler(void* user, const char* section, const char* name,
     // General settings
     if (strcmp(section, "general") == 0) {
         if (strcmp(name, "pid_file") == 0) {
-            strncpy(config->pid_file, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->pid_file, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "log_file") == 0) {
-            strncpy(config->log_file, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->log_file, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "log_level") == 0) {
             config->log_level = safe_atoi(value, 0);
         } else if (strcmp(name, "syslog_enabled") == 0) {
             config->syslog_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "syslog_ident") == 0) {
-            strncpy(config->syslog_ident, value, sizeof(config->syslog_ident) - 1);
+            safe_strcpy(config->syslog_ident, value, sizeof(config->syslog_ident), 0);
         } else if (strcmp(name, "syslog_facility") == 0) {
             // Parse syslog facility - support both numeric and string values
             if (isdigit(value[0])) {
@@ -676,9 +632,9 @@ static int config_ini_handler(void* user, const char* section, const char* name,
     // Storage settings
     else if (strcmp(section, "storage") == 0) {
         if (strcmp(name, "path") == 0) {
-            strncpy(config->storage_path, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->storage_path, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "path_hls") == 0) {
-            strncpy(config->storage_path_hls, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->storage_path_hls, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "max_size") == 0) {
             config->max_storage_size = strtoull(value, NULL, 10);
         } else if (strcmp(name, "retention_days") == 0) {
@@ -688,8 +644,7 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         } else if (strcmp(name, "record_mp4_directly") == 0) {
             config->record_mp4_directly = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "mp4_path") == 0) {
-            strncpy(config->mp4_storage_path, value, sizeof(config->mp4_storage_path) - 1);
-            config->mp4_storage_path[sizeof(config->mp4_storage_path) - 1] = '\0';
+            safe_strcpy(config->mp4_storage_path, value, sizeof(config->mp4_storage_path), 0);
         } else if (strcmp(name, "mp4_segment_duration") == 0) {
             config->mp4_segment_duration = safe_atoi(value, 0);
         } else if (strcmp(name, "mp4_retention_days") == 0) {
@@ -701,16 +656,15 @@ static int config_ini_handler(void* user, const char* section, const char* name,
     // Models settings
     else if (strcmp(section, "models") == 0) {
         if (strcmp(name, "path") == 0) {
-            strncpy(config->models_path, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->models_path, value, MAX_PATH_LENGTH, 0);
         }
     }
     // API detection settings
     else if (strcmp(section, "api_detection") == 0) {
         if (strcmp(name, "url") == 0) {
-            strncpy(config->api_detection_url, value, MAX_URL_LENGTH - 1);
+            safe_strcpy(config->api_detection_url, value, MAX_URL_LENGTH, 0);
         } else if (strcmp(name, "backend") == 0) {
-            strncpy(config->api_detection_backend, value, 31);
-            config->api_detection_backend[31] = '\0';
+            safe_strcpy(config->api_detection_backend, value, sizeof(config->api_detection_backend), 0);
         } else if (strcmp(name, "detection_threshold") == 0) {
             config->default_detection_threshold = safe_atoi(value, 0);
             // Clamp to valid range
@@ -727,35 +681,35 @@ static int config_ini_handler(void* user, const char* section, const char* name,
             if (config->default_post_detection_buffer < 0) config->default_post_detection_buffer = 0;
             if (config->default_post_detection_buffer > 300) config->default_post_detection_buffer = 300;
         } else if (strcmp(name, "buffer_strategy") == 0) {
-            strncpy(config->default_buffer_strategy, value, 31);
-            config->default_buffer_strategy[31] = '\0';
+            safe_strcpy(config->default_buffer_strategy, value, sizeof(config->default_buffer_strategy), 0);
         }
     }
     // Database settings
     else if (strcmp(section, "database") == 0) {
         if (strcmp(name, "path") == 0) {
-            strncpy(config->db_path, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->db_path, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "backup_interval_minutes") == 0) {
             config->db_backup_interval_minutes = safe_atoi(value, 0);
         } else if (strcmp(name, "backup_retention_count") == 0) {
             config->db_backup_retention_count = safe_atoi(value, 0);
         } else if (strcmp(name, "post_backup_script") == 0) {
-            strncpy(config->db_post_backup_script, value, MAX_PATH_LENGTH - 1);
-            config->db_post_backup_script[MAX_PATH_LENGTH - 1] = '\0';
+            safe_strcpy(config->db_post_backup_script, value, MAX_PATH_LENGTH, 0);
         }
     }
     // Web server settings
     else if (strcmp(section, "web") == 0) {
         if (strcmp(name, "port") == 0) {
             config->web_port = safe_atoi(value, 0);
+        } else if (strcmp(name, "bind_ip") == 0) {
+            safe_strcpy(config->web_bind_ip, value, sizeof(config->web_bind_ip), 0);
         } else if (strcmp(name, "root") == 0) {
-            strncpy(config->web_root, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->web_root, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "auth_enabled") == 0) {
             config->web_auth_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "username") == 0) {
-            strncpy(config->web_username, value, 31);
+            safe_strcpy(config->web_username, value, sizeof(config->web_username), 0);
         } else if (strcmp(name, "password") == 0) {
-            strncpy(config->web_password, value, 31);
+            safe_strcpy(config->web_password, value, sizeof(config->web_password), 0);
         } else if (strcmp(name, "webrtc_disabled") == 0) {
             config->webrtc_disabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "auth_timeout_hours") == 0) {
@@ -780,8 +734,7 @@ static int config_ini_handler(void* user, const char* section, const char* name,
                 config->trusted_device_days = (INT_MAX / 86400);
             }
         } else if (strcmp(name, "trusted_proxy_cidrs") == 0) {
-            strncpy(config->trusted_proxy_cidrs, value, sizeof(config->trusted_proxy_cidrs) - 1);
-            config->trusted_proxy_cidrs[sizeof(config->trusted_proxy_cidrs) - 1] = '\0';
+            safe_strcpy(config->trusted_proxy_cidrs, value, sizeof(config->trusted_proxy_cidrs), 0);
         } else if (strcmp(name, "demo_mode") == 0) {
             config->demo_mode = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "force_mfa_on_login") == 0) {
@@ -837,7 +790,7 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         if (strcmp(last_warned_section, section) != 0) {
             log_warn("Ignoring stale INI section [%s]: stream config lives in the database. "
                      "Remove this section from the config file.", section);
-            strncpy(last_warned_section, section, sizeof(last_warned_section) - 1);
+            safe_strcpy(last_warned_section, section, sizeof(last_warned_section), 0);
         }
     }
     // Memory optimization
@@ -847,7 +800,7 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         } else if (strcmp(name, "use_swap") == 0) {
             config->use_swap = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "swap_file") == 0) {
-            strncpy(config->swap_file, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->swap_file, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "swap_size") == 0) {
             config->swap_size = strtoull(value, NULL, 10);
         }
@@ -857,7 +810,7 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         if (strcmp(name, "hw_accel_enabled") == 0) {
             config->hw_accel_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "hw_accel_device") == 0) {
-            strncpy(config->hw_accel_device, value, 31);
+            safe_strcpy(config->hw_accel_device, value, sizeof(config->hw_accel_device), 0);
         }
     }
     // go2rtc settings
@@ -865,9 +818,9 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         if (strcmp(name, "enabled") == 0) {
             config->go2rtc_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "binary_path") == 0) {
-            strncpy(config->go2rtc_binary_path, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->go2rtc_binary_path, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "config_dir") == 0) {
-            strncpy(config->go2rtc_config_dir, value, MAX_PATH_LENGTH - 1);
+            safe_strcpy(config->go2rtc_config_dir, value, MAX_PATH_LENGTH, 0);
         } else if (strcmp(name, "api_port") == 0) {
             config->go2rtc_api_port = safe_atoi(value, 0);
         } else if (strcmp(name, "rtsp_port") == 0) {
@@ -879,14 +832,11 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         } else if (strcmp(name, "stun_enabled") == 0) {
             config->go2rtc_stun_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "stun_server") == 0) {
-            strncpy(config->go2rtc_stun_server, value, sizeof(config->go2rtc_stun_server) - 1);
-            config->go2rtc_stun_server[sizeof(config->go2rtc_stun_server) - 1] = '\0';
+            safe_strcpy(config->go2rtc_stun_server, value, sizeof(config->go2rtc_stun_server), 0);
         } else if (strcmp(name, "external_ip") == 0) {
-            strncpy(config->go2rtc_external_ip, value, sizeof(config->go2rtc_external_ip) - 1);
-            config->go2rtc_external_ip[sizeof(config->go2rtc_external_ip) - 1] = '\0';
+            safe_strcpy(config->go2rtc_external_ip, value, sizeof(config->go2rtc_external_ip), 0);
         } else if (strcmp(name, "ice_servers") == 0) {
-            strncpy(config->go2rtc_ice_servers, value, sizeof(config->go2rtc_ice_servers) - 1);
-            config->go2rtc_ice_servers[sizeof(config->go2rtc_ice_servers) - 1] = '\0';
+            safe_strcpy(config->go2rtc_ice_servers, value, sizeof(config->go2rtc_ice_servers), 0);
         } else if (strcmp(name, "force_native_hls") == 0) {
             config->go2rtc_force_native_hls = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "proxy_max_inflight") == 0) {
@@ -900,14 +850,11 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         } else if (strcmp(name, "turn_enabled") == 0) {
             config->turn_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "turn_server_url") == 0) {
-            strncpy(config->turn_server_url, value, sizeof(config->turn_server_url) - 1);
-            config->turn_server_url[sizeof(config->turn_server_url) - 1] = '\0';
+            safe_strcpy(config->turn_server_url, value, sizeof(config->turn_server_url), 0);
         } else if (strcmp(name, "turn_username") == 0) {
-            strncpy(config->turn_username, value, sizeof(config->turn_username) - 1);
-            config->turn_username[sizeof(config->turn_username) - 1] = '\0';
+            safe_strcpy(config->turn_username, value, sizeof(config->turn_username), 0);
         } else if (strcmp(name, "turn_password") == 0) {
-            strncpy(config->turn_password, value, sizeof(config->turn_password) - 1);
-            config->turn_password[sizeof(config->turn_password) - 1] = '\0';
+            safe_strcpy(config->turn_password, value, sizeof(config->turn_password), 0);
         }
     }
     // ONVIF settings
@@ -924,8 +871,7 @@ static int config_ini_handler(void* user, const char* section, const char* name,
                 config->onvif_discovery_interval = 3600;
             }
         } else if (strcmp(name, "discovery_network") == 0) {
-            strncpy(config->onvif_discovery_network, value, sizeof(config->onvif_discovery_network) - 1);
-            config->onvif_discovery_network[sizeof(config->onvif_discovery_network) - 1] = '\0';
+            safe_strcpy(config->onvif_discovery_network, value, sizeof(config->onvif_discovery_network), 0);
         }
     }
     // MQTT settings for detection event streaming
@@ -933,25 +879,20 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         if (strcmp(name, "enabled") == 0) {
             config->mqtt_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "broker_host") == 0) {
-            strncpy(config->mqtt_broker_host, value, sizeof(config->mqtt_broker_host) - 1);
-            config->mqtt_broker_host[sizeof(config->mqtt_broker_host) - 1] = '\0';
+            safe_strcpy(config->mqtt_broker_host, value, sizeof(config->mqtt_broker_host), 0);
         } else if (strcmp(name, "broker_port") == 0) {
             config->mqtt_broker_port = safe_atoi(value, 0);
             if (config->mqtt_broker_port <= 0 || config->mqtt_broker_port > 65535) {
                 config->mqtt_broker_port = 1883; // Default port
             }
         } else if (strcmp(name, "username") == 0) {
-            strncpy(config->mqtt_username, value, sizeof(config->mqtt_username) - 1);
-            config->mqtt_username[sizeof(config->mqtt_username) - 1] = '\0';
+            safe_strcpy(config->mqtt_username, value, sizeof(config->mqtt_username), 0);
         } else if (strcmp(name, "password") == 0) {
-            strncpy(config->mqtt_password, value, sizeof(config->mqtt_password) - 1);
-            config->mqtt_password[sizeof(config->mqtt_password) - 1] = '\0';
+            safe_strcpy(config->mqtt_password, value, sizeof(config->mqtt_password), 0);
         } else if (strcmp(name, "client_id") == 0) {
-            strncpy(config->mqtt_client_id, value, sizeof(config->mqtt_client_id) - 1);
-            config->mqtt_client_id[sizeof(config->mqtt_client_id) - 1] = '\0';
+            safe_strcpy(config->mqtt_client_id, value, sizeof(config->mqtt_client_id), 0);
         } else if (strcmp(name, "topic_prefix") == 0) {
-            strncpy(config->mqtt_topic_prefix, value, sizeof(config->mqtt_topic_prefix) - 1);
-            config->mqtt_topic_prefix[sizeof(config->mqtt_topic_prefix) - 1] = '\0';
+            safe_strcpy(config->mqtt_topic_prefix, value, sizeof(config->mqtt_topic_prefix), 0);
         } else if (strcmp(name, "tls_enabled") == 0) {
             config->mqtt_tls_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "keepalive") == 0) {
@@ -972,8 +913,7 @@ static int config_ini_handler(void* user, const char* section, const char* name,
         } else if (strcmp(name, "ha_discovery") == 0 || strcmp(name, "ha_discovery_enabled") == 0) {
             config->mqtt_ha_discovery = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
         } else if (strcmp(name, "ha_discovery_prefix") == 0) {
-            strncpy(config->mqtt_ha_discovery_prefix, value, sizeof(config->mqtt_ha_discovery_prefix) - 1);
-            config->mqtt_ha_discovery_prefix[sizeof(config->mqtt_ha_discovery_prefix) - 1] = '\0';
+            safe_strcpy(config->mqtt_ha_discovery_prefix, value, sizeof(config->mqtt_ha_discovery_prefix), 0);
         } else if (strcmp(name, "ha_snapshot_interval") == 0) {
             config->mqtt_ha_snapshot_interval = safe_atoi(value, 0);
             if (config->mqtt_ha_snapshot_interval < 0) {
@@ -1215,8 +1155,7 @@ void set_custom_config_path(const char *path) {
         return;
     }
 
-    strncpy(g_custom_config_path, path, MAX_PATH_LENGTH - 1);
-    g_custom_config_path[MAX_PATH_LENGTH - 1] = '\0';
+    safe_strcpy(g_custom_config_path, path, MAX_PATH_LENGTH, 0);
     log_info("Custom config path set to: %s", g_custom_config_path);
 }
 
@@ -1233,8 +1172,7 @@ const char* get_loaded_config_path(void) {
 // Function to set the loaded config path
 static void set_loaded_config_path(const char *path) {
     if (path && path[0] != '\0') {
-        strncpy(g_loaded_config_path, path, MAX_PATH_LENGTH - 1);
-        g_loaded_config_path[MAX_PATH_LENGTH - 1] = '\0';
+        safe_strcpy(g_loaded_config_path, path, MAX_PATH_LENGTH, 0);
         log_info("Loaded config path set to: %s", g_loaded_config_path);
     }
 }
@@ -1304,7 +1242,7 @@ int load_config(config_t *config) {
     // Set default web root if not specified
     if (strlen(config->web_root) == 0) {
         // Set a default web root path
-        snprintf(config->web_root, sizeof(config->web_root), "%s", "/var/www/lightnvr");  // or another appropriate default
+        safe_strcpy(config->web_root, "/var/www/lightnvr", sizeof(config->web_root), 0);  // or another appropriate default
     }
 
     // Add logging to debug
@@ -1347,15 +1285,14 @@ int reload_config(config_t *config) {
     // Save copies of the current config fields needed for comparison
     int old_log_level = config->log_level;
     int old_web_port = config->web_port;
+    char old_web_bind_ip[32];
+    safe_strcpy(old_web_bind_ip, config->web_bind_ip, sizeof(old_web_bind_ip), 0);
     char old_storage_path[MAX_PATH_LENGTH];
-    strncpy(old_storage_path, config->storage_path, sizeof(old_storage_path) - 1);
-    old_storage_path[sizeof(old_storage_path) - 1] = '\0';
+    safe_strcpy(old_storage_path, config->storage_path, sizeof(old_storage_path), 0);
     char old_storage_path_hls[MAX_PATH_LENGTH];
-    strncpy(old_storage_path_hls, config->storage_path_hls, sizeof(old_storage_path_hls) - 1);
-    old_storage_path_hls[sizeof(old_storage_path_hls) - 1] = '\0';
+    safe_strcpy(old_storage_path_hls, config->storage_path_hls, sizeof(old_storage_path_hls), 0);
     char old_models_path[MAX_PATH_LENGTH];
-    strncpy(old_models_path, config->models_path, sizeof(old_models_path) - 1);
-    old_models_path[sizeof(old_models_path) - 1] = '\0';
+    safe_strcpy(old_models_path, config->models_path, sizeof(old_models_path), 0);
     uint64_t old_max_storage_size = config->max_storage_size;
     int old_retention_days = config->retention_days;
     
@@ -1374,6 +1311,11 @@ int reload_config(config_t *config) {
     if (old_web_port != config->web_port) {
         log_info("Web port changed: %d -> %d", old_web_port, config->web_port);
         log_warn("Web port change requires restart to take effect");
+    }
+
+    if (strcmp(old_web_bind_ip, config->web_bind_ip) != 0) {
+        log_info("Web bind address changed: %s -> %s", old_web_bind_ip, config->web_bind_ip);
+        log_warn("Web bind address change requires restart to take effect");
     }
     
     if (strcmp(old_storage_path, config->storage_path) != 0) {
@@ -1453,8 +1395,7 @@ int save_config(const config_t *config, const char *path) {
     
     // Check if directory exists and is writable
     char dir_path[MAX_PATH_LENGTH];
-    strncpy(dir_path, save_path, MAX_PATH_LENGTH - 1);
-    dir_path[MAX_PATH_LENGTH - 1] = '\0';
+    safe_strcpy(dir_path, save_path, MAX_PATH_LENGTH, 0);
     
     // Get directory part
     char *last_slash = strrchr(dir_path, '/');
@@ -1465,7 +1406,7 @@ int save_config(const config_t *config, const char *path) {
         struct stat st;
         if (stat(dir_path, &st) != 0) {
             log_warn("Directory %s does not exist, attempting to create it", dir_path);
-            if (create_directory(dir_path) != 0) {
+            if (mkdir_recursive(dir_path) != 0) {
                 log_error("Failed to create directory %s: %s", dir_path, strerror(errno));
                 return -1;
             }
@@ -1489,8 +1430,7 @@ int save_config(const config_t *config, const char *path) {
     char validated_filename[MAX_PATH_LENGTH];
     {
         char tmp[MAX_PATH_LENGTH];
-        strncpy(tmp, save_path, MAX_PATH_LENGTH - 1);
-        tmp[MAX_PATH_LENGTH - 1] = '\0';
+        safe_strcpy(tmp, save_path, MAX_PATH_LENGTH, 0);
 
         const char *fname;
 
@@ -1667,6 +1607,7 @@ int save_config(const config_t *config, const char *path) {
     fprintf(file, "[web]\n");
     fprintf(file, "web_thread_pool_size = %d  ; libuv UV_THREADPOOL_SIZE (default: 2x CPU cores; requires restart)\n", config->web_thread_pool_size);
     fprintf(file, "port = %d\n", config->web_port);
+    fprintf(file, "bind_ip = %s\n", config->web_bind_ip);
     fprintf(file, "root = %s\n", config->web_root);
     fprintf(file, "auth_enabled = %s\n", config->web_auth_enabled ? "true" : "false");
     fprintf(file, "username = %s\n", config->web_username);
@@ -1807,6 +1748,7 @@ void print_config(const config_t *config) {
     
     printf("  Web Server Settings:\n");
     printf("    Web Port: %d\n", config->web_port);
+    printf("    Web Bind Address: %s\n", config->web_bind_ip);
     printf("    Web Root: %s\n", config->web_root);
     printf("    Web Auth Enabled: %s\n", config->web_auth_enabled ? "true" : "false");
     printf("    Web Username: %s\n", config->web_username);

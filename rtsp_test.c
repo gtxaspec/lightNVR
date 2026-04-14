@@ -35,7 +35,7 @@ void handle_signal(int sig) {
 // Function to log FFmpeg errors
 void log_error(int err, const char *message) {
     char error_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
-    av_strerror(ret, error_buf, AV_ERROR_MAX_STRING_SIZE);
+    av_strerror(err, error_buf, AV_ERROR_MAX_STRING_SIZE);
     fprintf(stderr, "%s: %s\n", message, error_buf);
 }
 

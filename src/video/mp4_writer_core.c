@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <limits.h>
 #include <signal.h>
 
@@ -26,6 +27,7 @@
 #include "database/database_manager.h"
 #include "core/config.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
 #include "video/mp4_writer.h"
@@ -45,8 +47,8 @@ mp4_writer_t *mp4_writer_create(const char *output_path, const char *stream_name
     }
 
     // Initialize writer
-    strncpy(writer->output_path, output_path, sizeof(writer->output_path) - 1);
-    strncpy(writer->stream_name, stream_name, sizeof(writer->stream_name) - 1);
+    safe_strcpy(writer->output_path, output_path, sizeof(writer->output_path), 0);
+    safe_strcpy(writer->stream_name, stream_name, sizeof(writer->stream_name), 0);
     writer->first_dts = AV_NOPTS_VALUE;
     writer->first_pts = AV_NOPTS_VALUE;
     writer->last_dts = AV_NOPTS_VALUE;
@@ -55,7 +57,7 @@ mp4_writer_t *mp4_writer_create(const char *output_path, const char *stream_name
     writer->last_packet_time = 0;  // Initialize to 0 to indicate no packets written yet
     writer->has_audio = 1;         // Initialize to 1 to enable audio by default
     writer->current_recording_id = 0; // Initialize to 0 to indicate no recording ID yet
-    strncpy(writer->trigger_type, "scheduled", sizeof(writer->trigger_type) - 1); // Default to scheduled
+    safe_strcpy(writer->trigger_type, "scheduled", sizeof(writer->trigger_type), 0); // Default to scheduled
 
     // Initialize audio state
     writer->audio.stream_idx = -1; // Initialize to -1 to indicate no audio stream
@@ -75,7 +77,7 @@ mp4_writer_t *mp4_writer_create(const char *output_path, const char *stream_name
     writer->shutdown_component_id = -1; // Initialize to -1 to indicate not registered
 
     // Extract output directory from output path
-    strncpy(writer->output_dir, output_path, sizeof(writer->output_dir) - 1);
+    safe_strcpy(writer->output_dir, output_path, sizeof(writer->output_dir), 0);
     char *last_slash = strrchr(writer->output_dir, '/');
     if (last_slash) {
         *last_slash = '\0';  // Truncate at the last slash to get directory
@@ -110,43 +112,48 @@ void mp4_writer_set_segment_duration(mp4_writer_t *writer, int segment_duration)
 /**
  * Get the actual end time of a recording based on its start time and video duration
  */
-static time_t get_recording_end_time(uint64_t recording_id, const char *file_path) {
-    // Get the recording metadata to find the start time
-    recording_metadata_t metadata;
-    if (get_recording_metadata_by_id(recording_id, &metadata) != 0) {
-        log_error("Failed to get recording metadata for ID %llu", (unsigned long long)recording_id);
-        return time(NULL); // Fallback to current time
+/**
+ * Return the actual encoded duration of a finalized MP4 file by reading its
+ * container metadata.  Must only be called after the file has been fully
+ * written (av_write_trailer + avio_closep already called).
+ *
+ * @param path  Full path to the closed MP4 file
+ * @return      Duration in seconds (>= 0.0), or -1.0 on error
+ */
+double get_mp4_file_duration_seconds(const char *path) {
+    if (!path || path[0] == '\0') return -1.0;
+
+    AVFormatContext *fmt = NULL;
+    if (avformat_open_input(&fmt, path, NULL, NULL) != 0) {
+        log_warn("get_mp4_file_duration_seconds: cannot open '%s'", path);
+        return -1.0;
     }
 
-    time_t start_time = metadata.start_time;
-
-    // Try to get the actual duration from the MP4 file
-    AVFormatContext *format_ctx = NULL;
-    int64_t duration_seconds = 0;
-
-    if (avformat_open_input(&format_ctx, file_path, NULL, NULL) == 0) {
-        if (avformat_find_stream_info(format_ctx, NULL) >= 0) {
-            if (format_ctx->duration != AV_NOPTS_VALUE) {
-                // Duration is in AV_TIME_BASE units (microseconds)
-                duration_seconds = format_ctx->duration / AV_TIME_BASE;
-                log_info("Got actual duration from MP4 file %s: %ld seconds",
-                        file_path, (long)duration_seconds);
-            }
-        }
-        avformat_close_input(&format_ctx);
+    double duration = -1.0;
+    if (avformat_find_stream_info(fmt, NULL) >= 0 &&
+        fmt->duration != AV_NOPTS_VALUE) {
+        duration = (double)fmt->duration / (double)AV_TIME_BASE;
     }
 
-    // Calculate end time as start_time + duration
-    time_t end_time = start_time + duration_seconds;
-
-    log_info("Calculated end_time for recording ID %llu: start=%ld, duration=%ld, end=%ld",
-            (unsigned long long)recording_id, (long)start_time, (long)duration_seconds, (long)end_time);
-
-    return end_time;
+    avformat_close_input(&fmt);
+    return duration;
 }
 
 /**
- * Close the MP4 writer and release resources
+ * Close the MP4 writer and release all resources.
+ *
+ * Close sequence (order matters):
+ *  1. Stop the RTSP recording thread (if running)
+ *  2. Write the MP4 trailer and close the AVIOContext  ← file is now complete
+ *  3. Free stream codec parameters and the AVFormatContext
+ *  4. Stat the file for its final size
+ *  5. Read the actual duration from the closed MP4 container
+ *  6. Update the database record with accurate end_time and size
+ *  7. Destroy mutexes, cleanup audio transcoder, free writer struct
+ *
+ * The old code did step 6 before steps 1-3, which meant the MP4 container
+ * was not yet finalized when avformat_open_input was called inside
+ * get_recording_end_time(), producing inaccurate durations.
  */
 void mp4_writer_close(mp4_writer_t *writer) {
     if (!writer) {
@@ -154,64 +161,28 @@ void mp4_writer_close(mp4_writer_t *writer) {
         return;
     }
 
-    // Log the closing operation
     log_info("Closing MP4 writer for stream %s at %s",
              writer->stream_name ? writer->stream_name : "unknown",
              writer->output_path ? writer->output_path : "unknown");
 
-    //  First, mark the recording as complete in the database if needed
-    if (writer->current_recording_id > 0) {
-        // Get the file size before marking as complete
-        struct stat st;
-
-        if (writer->output_path && stat(writer->output_path, &st) == 0) {
-            uint64_t size_bytes = (uint64_t)st.st_size;
-            log_info("Final file size for %s: %llu bytes",
-                    writer->output_path, (unsigned long long)size_bytes);
-
-            // Get the actual end time based on the video duration
-            time_t end_time = get_recording_end_time(writer->current_recording_id, writer->output_path);
-
-            // Mark the recording as complete with the correct file size and end time
-            update_recording_metadata(writer->current_recording_id, end_time, size_bytes, true);
-            log_info("Marked recording (ID: %llu) as complete during writer close",
-                    (unsigned long long)writer->current_recording_id);
-            // Keep stream storage cache current so System page stats are up-to-date.
-            update_stream_storage_cache_add_recording(writer->stream_name, size_bytes);
-        } else if (writer->output_path) {
-            log_warn("Failed to get file size for %s during close", writer->output_path);
-
-            // Still mark the recording as complete, but with size 0
-            // Use current time as fallback since we can't read the file
-            update_recording_metadata(writer->current_recording_id, time(NULL), 0, true);
-            log_info("Marked recording (ID: %llu) as complete during writer close (size unknown)",
-                    (unsigned long long)writer->current_recording_id);
-            update_stream_storage_cache_add_recording(writer->stream_name, 0);
-        }
-    }
-
-    // First, stop any recording thread if it's running
+    /* ------------------------------------------------------------------ *
+     * 1. Stop the RTSP recording thread so it no longer writes packets.  *
+     * ------------------------------------------------------------------ */
     if (writer->thread_ctx) {
         log_info("Stopping recording thread for %s during writer close",
                 writer->stream_name ? writer->stream_name : "unknown");
-
-        // Call the function to stop the recording thread
-        // This will properly clean up the thread context
         mp4_writer_stop_recording_thread(writer);
-
-        // thread_ctx should now be NULL if the function worked correctly
-        // If it's not NULL, there might be a problem
         if (writer->thread_ctx) {
             log_warn("Thread context still exists after stopping recording thread for %s",
                    writer->stream_name ? writer->stream_name : "unknown");
-            // Don't free it here, as it might still be in use
         }
     }
 
-    // MEMORY LEAK FIX: Ensure proper cleanup of FFmpeg resources
-    // Close the output context if it exists
+    /* ------------------------------------------------------------------ *
+     * 2-3. Write trailer, close AVIOContext, free FFmpeg resources.      *
+     *      The file is complete and readable on disk after this block.   *
+     * ------------------------------------------------------------------ */
     if (writer->output_ctx) {
-        // Write trailer if the context is initialized
         if (writer->is_initialized && writer->output_ctx->pb) {
             int ret = av_write_trailer(writer->output_ctx);
             if (ret < 0) {
@@ -221,37 +192,76 @@ void mp4_writer_close(mp4_writer_t *writer) {
             }
         }
 
-        // Close the output file
         if (writer->output_ctx->pb) {
             avio_closep(&writer->output_ctx->pb);
         }
 
-        // MEMORY LEAK FIX: Properly clean up all streams in the output context
-        // This ensures all codec contexts and other resources are freed
-        if (writer->output_ctx->nb_streams > 0) {
-            for (unsigned int i = 0; i < writer->output_ctx->nb_streams; i++) {
-                if (writer->output_ctx->streams[i]) {
-                    // Free any codec parameters
-                    if (writer->output_ctx->streams[i]->codecpar) {
-                        avcodec_parameters_free(&writer->output_ctx->streams[i]->codecpar);
-                    }
-                }
+        /* Free codec parameters for every stream in the output context */
+        for (unsigned int i = 0; i < writer->output_ctx->nb_streams; i++) {
+            if (writer->output_ctx->streams[i] &&
+                writer->output_ctx->streams[i]->codecpar) {
+                avcodec_parameters_free(&writer->output_ctx->streams[i]->codecpar);
             }
         }
 
-        // Free the output context
         avformat_free_context(writer->output_ctx);
         writer->output_ctx = NULL;
     }
 
-    //  Ensure we're not in the middle of a rotation
+    /* ------------------------------------------------------------------ *
+     * 4-6. Now that the file is closed: stat size, read actual duration, *
+     *      then update the database with accurate values.                *
+     * ------------------------------------------------------------------ */
+    if (writer->current_recording_id > 0 && writer->output_path[0] != '\0') {
+        struct stat st;
+        uint64_t size_bytes = 0;
+        bool stat_ok = (stat(writer->output_path, &st) == 0);
+
+        if (stat_ok) {
+            size_bytes = (uint64_t)st.st_size;
+            log_info("Final file size for %s: %llu bytes",
+                     writer->output_path, (unsigned long long)size_bytes);
+        } else {
+            log_warn("Failed to stat '%s' during close: %s",
+                     writer->output_path, strerror(errno));
+        }
+
+        /* Use st.st_mtime as end_time baseline: after avio_closep() this is the
+         * actual wall-clock moment the last byte was written to disk, and it does
+         * not depend on writer->creation_time matching the DB start_time.
+         *
+         * creation_time is set at rotation time while the DB start_time is
+         * recorded at the first keyframe, which can introduce a mismatch of up
+         * to one GOP interval. st.st_mtime avoids this drift entirely.
+         *
+         * get_mp4_file_duration_seconds() is still called for log diagnostics. */
+        time_t end_time = stat_ok ? st.st_mtime : time(NULL);
+        double dur = get_mp4_file_duration_seconds(writer->output_path);
+        if (dur >= 0.0) {
+            log_info("Actual MP4 duration for %s: %.1f s; end_time=%ld (from st.st_mtime)",
+                     writer->output_path, dur, (long)end_time);
+        } else {
+            log_warn("Could not read duration from '%s'; using %s end_time=%ld",
+                     writer->output_path, stat_ok ? "st.st_mtime" : "wall-clock",
+                     (long)end_time);
+        }
+
+        update_recording_metadata(writer->current_recording_id, end_time, size_bytes, true);
+        log_info("Marked recording (ID: %llu) as complete (dur=%.1fs, size=%llu bytes)",
+                 (unsigned long long)writer->current_recording_id, dur >= 0 ? dur : 0.0,
+                 (unsigned long long)size_bytes);
+        update_stream_storage_cache_add_recording(writer->stream_name, size_bytes);
+    }
+
     if (writer->is_rotating) {
         log_warn("MP4 writer was still rotating during close, forcing rotation to complete");
         writer->is_rotating = 0;
         writer->waiting_for_keyframe = 0;
     }
 
-    // Destroy mutexes with proper error handling
+    /* ------------------------------------------------------------------ *
+     * 7. Destroy mutexes, cleanup audio transcoder, free struct.         *
+     * ------------------------------------------------------------------ */
     int mutex_result = pthread_mutex_destroy(&writer->mutex);
     if (mutex_result != 0) {
         log_warn("Failed to destroy writer mutex: %s", strerror(mutex_result));
@@ -262,11 +272,10 @@ void mp4_writer_close(mp4_writer_t *writer) {
         log_warn("Failed to destroy audio mutex: %s", strerror(mutex_result));
     }
 
-    // Clean up any audio transcoders for this stream
     cleanup_audio_transcoder(writer->stream_name);
 
-    // Free the writer structure
     free(writer);
 
     log_info("MP4 writer closed and resources freed");
 }
+

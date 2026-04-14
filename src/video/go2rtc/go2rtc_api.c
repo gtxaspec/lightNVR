@@ -3,11 +3,6 @@
  * @brief Implementation of the go2rtc API client
  */
 
-#include "video/go2rtc/go2rtc_api.h"
-#include "core/config.h"
-#include "core/logger.h"
-#include "core/url_utils.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +10,11 @@
 #include <ctype.h>
 #include <cjson/cJSON.h>
 
+#include "video/go2rtc/go2rtc_api.h"
+#include "core/config.h"
+#include "core/logger.h"
+#include "core/url_utils.h"
+#include "utils/strings.h"
 
 // API client configuration
 static char *g_api_host = NULL;
@@ -130,7 +130,7 @@ bool go2rtc_api_add_stream(const char *stream_id, const char *stream_url) {
     // Format the URL for the API endpoint with query parameters (simple method)
     // This is the method that works according to user feedback
     // URL encode the stream_url to handle special characters
-    char encoded_url[URL_BUFFER_SIZE * 3] = {0}; // Extra space for URL encoding
+    char encoded_url[URL_BUFFER_SIZE * 3]; // Extra space for URL encoding
     simple_url_escape(stream_url, encoded_url, URL_BUFFER_SIZE * 3);
 
     // Sanitize the stream name so that names with spaces work correctly.
@@ -226,7 +226,7 @@ bool go2rtc_api_add_stream_multi(const char *stream_id, const char **sources, in
     // Add each source as a src parameter
     for (int i = 0; i < num_sources; i++) {
         // URL encode the source
-        char encoded_url[URL_BUFFER_SIZE * 3] = {0};
+        char encoded_url[URL_BUFFER_SIZE * 3];
         simple_url_escape(sources[i], encoded_url, URL_BUFFER_SIZE * 3);
 
         if (i > 0) {
@@ -452,8 +452,7 @@ bool go2rtc_api_stream_exists(const char *stream_id) {
             } else {
                 // Log first 200 chars of body to help diagnose parsing issues
                 char preview[201];
-                strncpy(preview, chunk.memory, 200);
-                preview[200] = '\0';
+                safe_strcpy(preview, chunk.memory, 201, 0);
                 log_warn("Failed to parse go2rtc /api/streams response as JSON. "
                          "Body preview (first 200 chars): %.200s", preview);
             }
@@ -583,8 +582,7 @@ bool go2rtc_api_get_streams(char *buffer, size_t buffer_size) {
         long http_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
         if (http_code == 200) {
-            strncpy(buffer, resp.buffer, buffer_size - 1);
-            buffer[buffer_size - 1] = '\0';
+            safe_strcpy(buffer, resp.buffer, buffer_size, 0);
             success = true;
         }
     }
@@ -654,14 +652,14 @@ bool go2rtc_api_get_application_info(int *rtsp_port,
                 if (version && version_size > 0) {
                     cJSON *version_obj = cJSON_GetObjectItem(json, "version");
                     if (version_obj && cJSON_IsString(version_obj)) {
-                        snprintf(version, version_size, "%s", cJSON_GetStringValue(version_obj));
+                        safe_strcpy(version, cJSON_GetStringValue(version_obj), version_size, 0);
                     }
                 }
 
                 if (revision && revision_size > 0) {
                     cJSON *revision_obj = cJSON_GetObjectItem(json, "revision");
                     if (revision_obj && cJSON_IsString(revision_obj)) {
-                        snprintf(revision, revision_size, "%s", cJSON_GetStringValue(revision_obj));
+                        safe_strcpy(revision, cJSON_GetStringValue(revision_obj), revision_size, 0);
                     }
                 }
 

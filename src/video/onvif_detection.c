@@ -15,6 +15,7 @@
 #include "core/curl_init.h"
 #include "core/shutdown_coordinator.h"
 #include "core/mqtt_client.h"
+#include "utils/strings.h"
 #include "video/onvif_detection.h"
 #include "video/onvif_soap.h"
 #include "video/detection_result.h"
@@ -263,12 +264,7 @@ static char *extract_subscription_address(const char *response) {
             start += strlen(patterns[(ptrdiff_t)i * 2]);
             int length = (int)(end - start);
             
-            char *address = (char *)malloc(length + 1);
-            if (address) {
-                strncpy(address, start, length);
-                address[length] = '\0';
-                return address;
-            }
+            return strndup(start, length);
         }
     }
 
@@ -312,11 +308,7 @@ static char *discover_event_service_url(const char *url, const char *username, c
             const char *val_end   = strstr(val_start, xaddr_close[i]);
             if (val_end) {
                 size_t url_len = (size_t)(val_end - val_start);
-                event_url = malloc(url_len + 1);
-                if (event_url) {
-                    strncpy(event_url, val_start, url_len);
-                    event_url[url_len] = '\0';
-                }
+                event_url = strndup(val_start, url_len);
                 break;
             }
         }
@@ -416,19 +408,15 @@ static onvif_subscription_t *get_subscription(const char *url, const char *usern
     // If we found a slot, use it
     if (slot >= 0) {
         // Store camera URL, username, and password
-        strncpy(subscriptions[slot].camera_url, url, sizeof(subscriptions[slot].camera_url) - 1);
-        subscriptions[slot].camera_url[sizeof(subscriptions[slot].camera_url) - 1] = '\0';
+        safe_strcpy(subscriptions[slot].camera_url, url, sizeof(subscriptions[slot].camera_url), 0);
         
-        strncpy(subscriptions[slot].username, username, sizeof(subscriptions[slot].username) - 1);
-        subscriptions[slot].username[sizeof(subscriptions[slot].username) - 1] = '\0';
+        safe_strcpy(subscriptions[slot].username, username, sizeof(subscriptions[slot].username), 0);
         
-        strncpy(subscriptions[slot].password, password, sizeof(subscriptions[slot].password) - 1);
-        subscriptions[slot].password[sizeof(subscriptions[slot].password) - 1] = '\0';
+        safe_strcpy(subscriptions[slot].password, password, sizeof(subscriptions[slot].password), 0);
         
         // Store subscription address
-        strncpy(subscriptions[slot].subscription_address, subscription_address, 
-                sizeof(subscriptions[slot].subscription_address) - 1);
-        subscriptions[slot].subscription_address[sizeof(subscriptions[slot].subscription_address) - 1] = '\0';
+        safe_strcpy(subscriptions[slot].subscription_address, subscription_address, 
+                sizeof(subscriptions[slot].subscription_address), 0);
         
         // Set timestamps
         time(&subscriptions[slot].creation_time);
@@ -653,8 +641,7 @@ int detect_motion_onvif(const char *onvif_url, const char *username, const char 
 
         // Create a single detection that covers the whole frame
         result->count = 1;
-        strncpy(result->detections[0].label, "motion", MAX_LABEL_LENGTH - 1);
-        result->detections[0].label[MAX_LABEL_LENGTH - 1] = '\0';
+        safe_strcpy(result->detections[0].label, "motion", MAX_LABEL_LENGTH, 0);
         result->detections[0].confidence = 1.0f;
         result->detections[0].x = 0.0f;
         result->detections[0].y = 0.0f;

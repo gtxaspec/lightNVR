@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "unity.h"
+#include "utils/strings.h"
 #include "video/go2rtc/go2rtc_process.h"
 
 void setUp(void) {}
@@ -79,8 +80,7 @@ static pid_t spawn_path_false_positive(char *dir_out, size_t dir_out_size) {
         return -1;
     }
 
-    strncpy(dir_out, dir, dir_out_size - 1);
-    dir_out[dir_out_size - 1] = '\0';
+    safe_strcpy(dir_out, dir, dir_out_size, 0);
 
     char script_path[PATH_MAX];
     snprintf(script_path, sizeof(script_path), "%s/hold.sh", dir_out);

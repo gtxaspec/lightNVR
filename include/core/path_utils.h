@@ -2,6 +2,7 @@
 #define LIGHTNVR_PATH_UTILS_H
 
 #include <stddef.h>
+#include <sys/types.h>
 
 /**
  * Sanitize a stream name for use as a path or object name.
@@ -12,5 +13,61 @@
  * @param output_size The size of the output buffer
  */
 void sanitize_stream_name(const char *input, char *output, size_t output_size);
+
+/**
+ * Ensure the specified directory exists, creating it if necessary. Does not recur.
+ * Sets errno on failure.
+ *
+ * @param path Directory path to create
+ * @return 0 on success, negative errno on error
+ */
+int ensure_dir(const char *path);
+
+/**
+ * Create a directory recursively (like mkdir -p)
+ * This replaces system("mkdir -p ...") calls
+ *
+ * @param path Directory path to create
+ * @return 0 on success, -1 on error
+ */
+int mkdir_recursive(const char *path);
+
+/**
+ * Ensure a directory exists for a file path by recursively creating
+ * parent directories.
+ *
+ * @param path File path to create parent directories for
+ * @return 0 on success, -1 on error
+ */
+int ensure_path(const char *path);
+
+/**
+ * Set permissions on a file or directory (like chmod)
+ *
+ * @param path Path to set permissions on
+ * @param mode Permission mode (e.g., 0755)
+ * @return 0 on success, -1 on error
+ */
+int chmod_path(const char *path, mode_t mode);
+
+/**
+ * Set permissions on a parent directory
+ *
+ * @param path Path to the file inside the parent directory
+ * @param mode Permission mode (e.g., 0755)
+ * @return 0 on success, -1 on error
+ */
+int chmod_parent(const char *path, mode_t mode);
+
+/**
+ * Recursively set permissions on a directory and its contents (like chmod -R)
+ *
+ * @param path Directory path to chmod recursively
+ * @param mode Permission mode (e.g., 0755)
+ * @return 0 on success, -1 on error
+ */
+int chmod_recursive(const char *path, mode_t mode);
+
+// TODO: create recursive chmod for folders only and use that instead of chmod_recursive
 
 #endif /* LIGHTNVR_PATH_UTILS_H */

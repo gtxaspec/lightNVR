@@ -18,6 +18,7 @@
 #include "core/shutdown_coordinator.h"
 #define LOG_COMPONENT "Metrics"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 /* ------------------------------------------------------------------ */
 /*  Global state                                                       */
@@ -225,7 +226,7 @@ stream_metrics_t *metrics_get_slot(const char *stream_name) {
             /* Double-check after acquiring lock */
             if (!m->active) {
                 memset(m->stream_name, 0, sizeof(m->stream_name));
-                strncpy(m->stream_name, stream_name, MAX_STREAM_NAME - 1);
+                safe_strcpy(m->stream_name, stream_name, MAX_STREAM_NAME, 0);
                 m->active = true;
                 m->stream_start_time = time(NULL);
                 m->prev_sample_time = 0;

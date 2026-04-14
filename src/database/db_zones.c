@@ -12,8 +12,7 @@
 #include "database/db_zones.h"
 #include "database/db_core.h"
 #include "core/logger.h"
-
-
+#include "utils/strings.h"
 
 /**
  * Convert polygon points to JSON string
@@ -224,12 +223,11 @@ int get_detection_zones(const char *stream_name, detection_zone_t *zones, int ma
     while (sqlite3_step(stmt) == SQLITE_ROW && count < max_zones) {
         detection_zone_t *zone = &zones[count];
 
-        strncpy(zone->id, (const char *)sqlite3_column_text(stmt, 0), MAX_ZONE_ID - 1);
-        strncpy(zone->stream_name, (const char *)sqlite3_column_text(stmt, 1), MAX_STREAM_NAME - 1);
-        strncpy(zone->name, (const char *)sqlite3_column_text(stmt, 2), MAX_ZONE_NAME - 1);
+        safe_strcpy(zone->id, (const char *)sqlite3_column_text(stmt, 0), MAX_ZONE_ID, 0);
+        safe_strcpy(zone->stream_name, (const char *)sqlite3_column_text(stmt, 1), MAX_STREAM_NAME, 0);
+        safe_strcpy(zone->name, (const char *)sqlite3_column_text(stmt, 2), MAX_ZONE_NAME, 0);
         zone->enabled = sqlite3_column_int(stmt, 3) != 0;
-        strncpy(zone->color, (const char *)sqlite3_column_text(stmt, 4), 7);
-        zone->color[7] = '\0';
+        safe_strcpy(zone->color, (const char *)sqlite3_column_text(stmt, 4), 8, 0);
 
         const char *polygon_json = (const char *)sqlite3_column_text(stmt, 5);
         if (json_to_polygon(polygon_json, zone->polygon, &zone->polygon_count, MAX_ZONE_POINTS) != 0) {
@@ -239,8 +237,7 @@ int get_detection_zones(const char *stream_name, detection_zone_t *zones, int ma
 
         const char *filter_classes = (const char *)sqlite3_column_text(stmt, 6);
         if (filter_classes) {
-            strncpy(zone->filter_classes, filter_classes, 255);
-            zone->filter_classes[255] = '\0';
+            safe_strcpy(zone->filter_classes, filter_classes, sizeof(zone->filter_classes), 0);
         } else {
             zone->filter_classes[0] = '\0';
         }

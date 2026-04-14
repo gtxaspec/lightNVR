@@ -54,6 +54,10 @@ struct mp4_writer {
     // Recording trigger type
     char trigger_type[16];    // 'scheduled', 'detection', 'motion', 'manual'
 
+    // Set to true once update_recording_start_time() has been called after the
+    // pre-event buffer was flushed.  Prevents a second correction on rotation.
+    bool start_time_corrected;
+
     // RTSP thread context
     mp4_writer_thread_t *thread_ctx;  // Changed from void* to proper type
 
@@ -98,6 +102,16 @@ int mp4_writer_add_audio_stream(mp4_writer_t *writer, const AVCodecParameters *c
  * @param writer The MP4 writer instance
  */
 void mp4_writer_close(mp4_writer_t *writer);
+
+/**
+ * Return the actual encoded duration of an MP4 file in seconds by reading
+ * its container metadata.  Used after a file has been finalized to get a more
+ * accurate duration than (end_time - start_time) wall-clock subtraction.
+ *
+ * @param path  Full path to the closed MP4 file
+ * @return      Duration in seconds (>= 0), or -1 on error
+ */
+double get_mp4_file_duration_seconds(const char *path);
 
 /**
  * Enable or disable audio recording

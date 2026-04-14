@@ -20,6 +20,7 @@
 #include "database/db_schema_cache.h"  // For cached_column_exists
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 
 // For password hashing
 #include <mbedtls/sha256.h>
@@ -104,33 +105,16 @@ static bool tracking_value_differs(const char *stored_value, const char *current
     return strcmp(normalized_stored, current_value) != 0;
 }
 
-static char *trim_ascii_whitespace(char *value) {
-    if (!value) {
-        return NULL;
-    }
-
-    while (*value && isspace((unsigned char)*value)) {
-        value++;
-    }
-
-    size_t len = strlen(value);
-    while (len > 0 && isspace((unsigned char)value[len - 1])) {
-        value[--len] = '\0';
-    }
-
-    return value;
-}
-
 static int parse_cidr_entry(const char *cidr, int *family, unsigned char *network, int *prefix_len) {
     if (!cidr || !family || !network || !prefix_len) {
         return -1;
     }
 
-    char entry[INET6_ADDRSTRLEN + 5] = {0};
+    char entry[INET6_ADDRSTRLEN + 5];
     if (strlen(cidr) >= sizeof(entry)) {
         return -1;
     }
-    strncpy(entry, cidr, sizeof(entry) - 1);
+    safe_strcpy(entry, cidr, sizeof(entry), 0);
 
     char *trimmed = trim_ascii_whitespace(entry);
     if (!trimmed || trimmed[0] == '\0') {
@@ -209,8 +193,8 @@ static int normalize_allowed_login_cidrs(const char *allowed_login_cidrs,
         return -1;
     }
 
-    char input[USER_ALLOWED_LOGIN_CIDRS_MAX] = {0};
-    strncpy(input, allowed_login_cidrs, sizeof(input) - 1);
+    char input[USER_ALLOWED_LOGIN_CIDRS_MAX];
+    safe_strcpy(input, allowed_login_cidrs, sizeof(input), 0);
 
     char *saveptr = NULL;
     for (char *token = strtok_r(input, ",\n", &saveptr);
@@ -305,7 +289,7 @@ static int prepare_user_lookup_stmt(sqlite3 *db, const char *where_clause, sqlit
     bool has_allowed_tags = cached_column_exists("users", "allowed_tags");
     bool has_allowed_login_cidrs = cached_column_exists("users", "allowed_login_cidrs");
 
-    char sql[768] = {0};
+    char sql[768];
     int written = snprintf(sql, sizeof(sql),
                            "SELECT id, username, email, role, api_key, created_at, "
                            "updated_at, last_login, is_active, password_change_locked, %s, %s, %s "
@@ -325,21 +309,18 @@ static void populate_user_from_stmt(sqlite3_stmt *stmt, user_t *user) {
     memset(user, 0, sizeof(*user));
 
     user->id = sqlite3_column_int64(stmt, 0);
-    strncpy(user->username, (const char *)sqlite3_column_text(stmt, 1), sizeof(user->username) - 1);
-    user->username[sizeof(user->username) - 1] = '\0';
+    safe_strcpy(user->username, (const char *)sqlite3_column_text(stmt, 1), sizeof(user->username), 0);
 
     const char *email = (const char *)sqlite3_column_text(stmt, 2);
     if (email) {
-        strncpy(user->email, email, sizeof(user->email) - 1);
-        user->email[sizeof(user->email) - 1] = '\0';
+        safe_strcpy(user->email, email, sizeof(user->email), 0);
     }
 
     user->role = (user_role_t)sqlite3_column_int(stmt, 3);
 
     const char *api_key = (const char *)sqlite3_column_text(stmt, 4);
     if (api_key) {
-        strncpy(user->api_key, api_key, sizeof(user->api_key) - 1);
-        user->api_key[sizeof(user->api_key) - 1] = '\0';
+        safe_strcpy(user->api_key, api_key, sizeof(user->api_key), 0);
     }
 
     user->created_at = sqlite3_column_int64(stmt, 5);
@@ -351,15 +332,13 @@ static void populate_user_from_stmt(sqlite3_stmt *stmt, user_t *user) {
 
     const char *allowed_tags = (const char *)sqlite3_column_text(stmt, 11);
     if (allowed_tags && allowed_tags[0] != '\0') {
-        strncpy(user->allowed_tags, allowed_tags, sizeof(user->allowed_tags) - 1);
-        user->allowed_tags[sizeof(user->allowed_tags) - 1] = '\0';
+        safe_strcpy(user->allowed_tags, allowed_tags, sizeof(user->allowed_tags), 0);
         user->has_tag_restriction = true;
     }
 
     const char *allowed_login_cidrs = (const char *)sqlite3_column_text(stmt, 12);
     if (allowed_login_cidrs && allowed_login_cidrs[0] != '\0') {
-        strncpy(user->allowed_login_cidrs, allowed_login_cidrs, sizeof(user->allowed_login_cidrs) - 1);
-        user->allowed_login_cidrs[sizeof(user->allowed_login_cidrs) - 1] = '\0';
+        safe_strcpy(user->allowed_login_cidrs, allowed_login_cidrs, sizeof(user->allowed_login_cidrs), 0);
         user->has_login_cidr_restriction = true;
     }
 }
@@ -742,22 +721,22 @@ int db_auth_update_user(int64_t user_id, const char *username, const char *email
     char query[512] = "UPDATE users SET updated_at = ?";
 
     if (username) {
-        strncat(query, ", username = ?", sizeof(query) - strlen(query) - 1);
+        safe_strcat(query, ", username = ?", sizeof(query));
     }
 
     if (email) {
-        strncat(query, ", email = ?", sizeof(query) - strlen(query) - 1);
+        safe_strcat(query, ", email = ?", sizeof(query));
     }
 
     if (role >= 0) {
-        strncat(query, ", role = ?", sizeof(query) - strlen(query) - 1);
+        safe_strcat(query, ", role = ?", sizeof(query));
     }
 
     if (is_active >= 0) {
-        strncat(query, ", is_active = ?", sizeof(query) - strlen(query) - 1);
+        safe_strcat(query, ", is_active = ?", sizeof(query));
     }
 
-    strncat(query, " WHERE id = ?;", sizeof(query) - strlen(query) - 1);
+    safe_strcat(query, " WHERE id = ?;", sizeof(query));
 
     // Prepare the statement
     rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
@@ -1885,9 +1864,9 @@ int db_auth_list_user_sessions(int64_t user_id, session_t *sessions, int max_cou
         const char *token = (const char *)sqlite3_column_text(stmt, 2);
         const char *ip = (const char *)sqlite3_column_text(stmt, 7);
         const char *ua = (const char *)sqlite3_column_text(stmt, 8);
-        if (token) strncpy(session->token, token, sizeof(session->token) - 1);
-        if (ip) strncpy(session->ip_address, ip, sizeof(session->ip_address) - 1);
-        if (ua) strncpy(session->user_agent, ua, sizeof(session->user_agent) - 1);
+        if (token) safe_strcpy(session->token, token, sizeof(session->token), 0);
+        if (ip) safe_strcpy(session->ip_address, ip, sizeof(session->ip_address), 0);
+        if (ua) safe_strcpy(session->user_agent, ua, sizeof(session->user_agent), 0);
         session->created_at = sqlite3_column_int64(stmt, 3);
         session->last_activity_at = sqlite3_column_int64(stmt, 4);
         session->idle_expires_at = sqlite3_column_int64(stmt, 5);
@@ -2100,8 +2079,8 @@ int db_auth_list_trusted_devices(int64_t user_id, trusted_device_t *devices, int
         device->user_id = sqlite3_column_int64(stmt, 1);
         const char *ip = (const char *)sqlite3_column_text(stmt, 5);
         const char *ua = (const char *)sqlite3_column_text(stmt, 6);
-        if (ip) strncpy(device->ip_address, ip, sizeof(device->ip_address) - 1);
-        if (ua) strncpy(device->user_agent, ua, sizeof(device->user_agent) - 1);
+        if (ip) safe_strcpy(device->ip_address, ip, sizeof(device->ip_address), 0);
+        if (ua) safe_strcpy(device->user_agent, ua, sizeof(device->user_agent), 0);
         device->created_at = sqlite3_column_int64(stmt, 2);
         device->last_used_at = sqlite3_column_int64(stmt, 3);
         device->expires_at = sqlite3_column_int64(stmt, 4);
@@ -2209,8 +2188,7 @@ int db_auth_get_totp_info(int64_t user_id, char *secret, size_t secret_size, boo
 
     const char *db_secret = (const char *)sqlite3_column_text(stmt, 0);
     if (db_secret && db_secret[0] != '\0') {
-        strncpy(secret, db_secret, secret_size - 1);
-        secret[secret_size - 1] = '\0';
+        safe_strcpy(secret, db_secret, secret_size, 0);
     }
 
     *enabled = sqlite3_column_int(stmt, 1) != 0;
@@ -2419,10 +2397,8 @@ bool db_auth_ip_allowed_for_user(const user_t *user, const char *client_ip) {
         return false;
     }
 
-    char cidr_list[USER_ALLOWED_LOGIN_CIDRS_MAX] = {0};
-    size_t cidr_len = strnlen(user->allowed_login_cidrs, sizeof(cidr_list) - 1);
-    memcpy(cidr_list, user->allowed_login_cidrs, cidr_len);
-    cidr_list[cidr_len] = '\0';
+    char cidr_list[USER_ALLOWED_LOGIN_CIDRS_MAX];
+    safe_strcpy(cidr_list, user->allowed_login_cidrs, USER_ALLOWED_LOGIN_CIDRS_MAX, 0);
 
     char *saveptr = NULL;
     for (char *token = strtok_r(cidr_list, ",\n", &saveptr);
@@ -2458,8 +2434,7 @@ bool db_auth_stream_allowed_for_user(const user_t *user, const char *stream_tags
 
     // Tokenize stream_tags and check each against user's allowed_tags
     char stream_copy[256];
-    strncpy(stream_copy, stream_tags, sizeof(stream_copy) - 1);
-    stream_copy[sizeof(stream_copy) - 1] = '\0';
+    safe_strcpy(stream_copy, stream_tags, sizeof(stream_copy), 0);
 
     char *saveptr = NULL;
     char *token = strtok_r(stream_copy, ",", &saveptr);

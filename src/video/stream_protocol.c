@@ -1,9 +1,3 @@
-#include "video/stream_protocol.h"
-#include "core/url_utils.h"
-#include "core/logger.h"
-#include "core/shutdown_coordinator.h"
-#include "video/ffmpeg_utils.h"
-#include "video/ffmpeg_leak_detector.h"
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -18,6 +12,14 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <stdatomic.h>
+
+#include "video/stream_protocol.h"
+#include "core/url_utils.h"
+#include "core/logger.h"
+#include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
+#include "video/ffmpeg_utils.h"
+#include "video/ffmpeg_leak_detector.h"
 
 /**
  * Interrupt callback for FFmpeg operations
@@ -61,8 +63,7 @@ bool is_multicast_url(const char *url) {
     }
 
     if (url_redact_for_logging(url, safe_url, sizeof(safe_url)) != 0) {
-        strncpy(safe_url, "[invalid-url]", sizeof(safe_url) - 1);
-        safe_url[sizeof(safe_url) - 1] = '\0';
+        safe_strcpy(safe_url, "[invalid-url]", sizeof(safe_url), 0);
     }
 
     // Extract IP address from URL with more robust parsing
@@ -85,8 +86,7 @@ bool is_multicast_url(const char *url) {
 
     // Make a copy of the IP part to avoid modifying the original
     char ip_buffer[256];
-    strncpy(ip_buffer, ip_start, sizeof(ip_buffer) - 1);
-    ip_buffer[sizeof(ip_buffer) - 1] = '\0';
+    safe_strcpy(ip_buffer, ip_start, sizeof(ip_buffer), 0);
 
     // Remove port and path information
     char *colon = strchr(ip_buffer, ':');
@@ -135,8 +135,7 @@ static bool check_rtsp_stream_exists(const char *url) {
     }
 
     if (url_redact_for_logging(url, safe_url, sizeof(safe_url)) != 0) {
-        strncpy(safe_url, "[invalid-url]", sizeof(safe_url) - 1);
-        safe_url[sizeof(safe_url) - 1] = '\0';
+        safe_strcpy(safe_url, "[invalid-url]", sizeof(safe_url), 0);
     }
 
     // Extract the host and port from the URL
@@ -273,8 +272,7 @@ int open_input_stream(AVFormatContext **input_ctx, const char *url, int protocol
     if (is_shutdown_initiated()) {
         char shutdown_safe_url[MAX_URL_LENGTH] = {0};
         if (url_redact_for_logging(url, shutdown_safe_url, sizeof(shutdown_safe_url)) != 0) {
-            strncpy(shutdown_safe_url, "[invalid-url]", sizeof(shutdown_safe_url) - 1);
-            shutdown_safe_url[sizeof(shutdown_safe_url) - 1] = '\0';
+            safe_strcpy(shutdown_safe_url, "[invalid-url]", sizeof(shutdown_safe_url), 0);
         }
         log_info("Skipping input stream open for %s during shutdown", shutdown_safe_url);
         return AVERROR(EINTR); // Interrupted system call
@@ -303,13 +301,11 @@ int open_input_stream(AVFormatContext **input_ctx, const char *url, int protocol
     }
 
     // Copy URL to local buffer
-    strncpy(local_url, url, sizeof(local_url) - 1);
-    local_url[sizeof(local_url) - 1] = '\0';
+    safe_strcpy(local_url, url, sizeof(local_url), 0);
 
     char safe_url[MAX_URL_LENGTH] = {0};
     if (url_redact_for_logging(local_url, safe_url, sizeof(safe_url)) != 0) {
-        strncpy(safe_url, "[invalid-url]", sizeof(safe_url) - 1);
-        safe_url[sizeof(safe_url) - 1] = '\0';
+        safe_strcpy(safe_url, "[invalid-url]", sizeof(safe_url), 0);
     }
 
     // Use local_url instead of url from this point forward
@@ -632,7 +628,7 @@ int open_input_stream(AVFormatContext **input_ctx, const char *url, int protocol
     if (*input_ctx && (*input_ctx)->nb_streams > 0) {
         // CRITICAL FIX: Sanitize the URL before logging to prevent displaying non-printable characters
         // This prevents potential issues with corrupted stream names
-        char sanitized_url[1024] = {0};
+        char sanitized_url[1024];
         size_t i;
 
         // Copy and sanitize the redacted URL
@@ -704,8 +700,7 @@ bool is_onvif_stream(const char *url) {
     if (strstr(url, "onvif") != NULL) {
         char safe_url[MAX_URL_LENGTH] = {0};
         if (url_redact_for_logging(url, safe_url, sizeof(safe_url)) != 0) {
-            strncpy(safe_url, "[invalid-url]", sizeof(safe_url) - 1);
-            safe_url[sizeof(safe_url) - 1] = '\0';
+            safe_strcpy(safe_url, "[invalid-url]", sizeof(safe_url), 0);
         }
         log_info("Detected ONVIF stream URL: %s", safe_url);
         return true;

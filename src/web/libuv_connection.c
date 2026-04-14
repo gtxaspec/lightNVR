@@ -20,6 +20,7 @@
 #include "web/api_handlers_health.h"
 #define LOG_COMPONENT "HTTP"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 // Forward declaration for MIME type helper defined in libuv_file_serve.c
 extern const char *libuv_get_mime_type(const char *path);
@@ -91,8 +92,8 @@ libuv_connection_t *libuv_connection_create(libuv_server_t *server) {
 void libuv_connection_reset(libuv_connection_t *conn) {
     if (!conn) return;
 
-    char client_ip[sizeof(conn->request.client_ip)] = {0};
-    strncpy(client_ip, conn->request.client_ip, sizeof(client_ip) - 1);
+    char client_ip[sizeof(conn->request.client_ip)];
+    safe_strcpy(client_ip, conn->request.client_ip, sizeof(client_ip), 0);
 
     // Free any allocated response body
     http_response_free(&conn->response);
@@ -100,7 +101,7 @@ void libuv_connection_reset(libuv_connection_t *conn) {
     // Reset request/response
     http_request_init(&conn->request);
     http_response_init(&conn->response);
-    strncpy(conn->request.client_ip, client_ip, sizeof(conn->request.client_ip) - 1);
+    safe_strcpy(conn->request.client_ip, client_ip, sizeof(conn->request.client_ip), 0);
 
     // Reset parser state
     llhttp_reset(&conn->parser);
@@ -287,17 +288,17 @@ static int on_url(llhttp_t *parser, const char *at, size_t length) {
             memcpy(conn->request.path, conn->request.uri, path_len);
             conn->request.path[path_len] = '\0';
         }
-        strncpy(conn->request.query_string, query + 1,
-                sizeof(conn->request.query_string) - 1);
+        safe_strcpy(conn->request.query_string, query + 1,
+                sizeof(conn->request.query_string), 0);
     } else {
-        strncpy(conn->request.path, conn->request.uri,
-                sizeof(conn->request.path) - 1);
+        safe_strcpy(conn->request.path, conn->request.uri,
+                sizeof(conn->request.path), 0);
         conn->request.query_string[0] = '\0';
     }
 
     // Get method from parser
     const char *method = llhttp_method_name(llhttp_get_method(parser));
-    strncpy(conn->request.method_str, method, sizeof(conn->request.method_str) - 1);
+    safe_strcpy(conn->request.method_str, method, sizeof(conn->request.method_str), 0);
 
     // Map to enum (using HTTP_METHOD_ prefix to avoid llhttp conflicts)
     if (strcmp(method, "GET") == 0) conn->request.method = HTTP_METHOD_GET;
@@ -339,8 +340,8 @@ static int on_header_value(llhttp_t *parser, const char *at, size_t length) {
 
     // Add to headers array
     int idx = conn->request.num_headers;
-    strncpy(conn->request.headers[idx].name, conn->current_header_field,
-            sizeof(conn->request.headers[idx].name) - 1);
+    safe_strcpy(conn->request.headers[idx].name, conn->current_header_field,
+            sizeof(conn->request.headers[idx].name), 0);
 
     size_t val_len = length < sizeof(conn->request.headers[idx].value) - 1 ?
                      length : sizeof(conn->request.headers[idx].value) - 1;
@@ -350,13 +351,13 @@ static int on_header_value(llhttp_t *parser, const char *at, size_t length) {
 
     // Handle special headers
     if (strcasecmp(conn->current_header_field, "Content-Type") == 0) {
-        strncpy(conn->request.content_type, conn->request.headers[idx].value,
-                sizeof(conn->request.content_type) - 1);
+        safe_strcpy(conn->request.content_type, conn->request.headers[idx].value,
+                sizeof(conn->request.content_type), 0);
     } else if (strcasecmp(conn->current_header_field, "Content-Length") == 0) {
         conn->request.content_length = strtoull(conn->request.headers[idx].value, NULL, 10);
     } else if (strcasecmp(conn->current_header_field, "User-Agent") == 0) {
-        strncpy(conn->request.user_agent, conn->request.headers[idx].value,
-                sizeof(conn->request.user_agent) - 1);
+        safe_strcpy(conn->request.user_agent, conn->request.headers[idx].value,
+                sizeof(conn->request.user_agent), 0);
     } else if (strcasecmp(conn->current_header_field, "Connection") == 0) {
         conn->keep_alive = (strcasecmp(conn->request.headers[idx].value, "close") != 0);
     }
@@ -540,7 +541,7 @@ static void static_file_resolve_handler(const http_request_t *req, http_response
     libuv_connection_t *conn = (libuv_connection_t *)req->user_data;
     const libuv_server_t *server = conn->server;
 
-    char file_path[1024];
+    char file_path[MAX_PATH_LENGTH];
     snprintf(file_path, sizeof(file_path), "%s%s", server->config.web_root, req->path);
 
     struct stat st;
@@ -555,25 +556,21 @@ static void static_file_resolve_handler(const http_request_t *req, http_response
             }
         }
         log_debug("Serving static file: %s", file_path);
-        strncpy(conn->deferred_file_path, file_path, sizeof(conn->deferred_file_path) - 1);
-        conn->deferred_file_path[sizeof(conn->deferred_file_path) - 1] = '\0';
+        safe_strcpy(conn->deferred_file_path, file_path, sizeof(conn->deferred_file_path), 0);
         conn->deferred_content_type[0] = '\0';
         conn->deferred_extra_headers[0] = '\0';
         conn->deferred_file_serve = true;
     } else {
-        char gz_path[1080];
+        char gz_path[MAX_PATH_LENGTH];
         snprintf(gz_path, sizeof(gz_path), "%s.gz", file_path);
         if (stat(gz_path, &st) == 0 && S_ISREG(st.st_mode)) {
             log_debug("Serving gzip static file: %s", gz_path);
             const char *mime_type = libuv_get_mime_type(file_path);
-            strncpy(conn->deferred_file_path, gz_path, sizeof(conn->deferred_file_path) - 1);
-            conn->deferred_file_path[sizeof(conn->deferred_file_path) - 1] = '\0';
-            strncpy(conn->deferred_content_type, mime_type,
-                    sizeof(conn->deferred_content_type) - 1);
-            conn->deferred_content_type[sizeof(conn->deferred_content_type) - 1] = '\0';
-            strncpy(conn->deferred_extra_headers, "Content-Encoding: gzip\r\n",
-                    sizeof(conn->deferred_extra_headers) - 1);
-            conn->deferred_extra_headers[sizeof(conn->deferred_extra_headers) - 1] = '\0';
+            safe_strcpy(conn->deferred_file_path, gz_path, sizeof(conn->deferred_file_path), 0);
+            safe_strcpy(conn->deferred_content_type, mime_type,
+                    sizeof(conn->deferred_content_type), 0);
+            safe_strcpy(conn->deferred_extra_headers, "Content-Encoding: gzip\r\n",
+                    sizeof(conn->deferred_extra_headers), 0);
             conn->deferred_file_serve = true;
         } else {
             log_debug("Static file not found: %s", file_path);

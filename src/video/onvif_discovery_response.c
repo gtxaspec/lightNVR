@@ -1,5 +1,3 @@
-#include "video/onvif_discovery_response.h"
-#include "core/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +13,10 @@
 #include <stdbool.h>
 #include <netinet/ip.h>
 
+#include "video/onvif_discovery_response.h"
+#include "core/logger.h"
+#include "utils/strings.h"
+
 // Helper function to extract content between XML tags
 static char* extract_xml_content(const char *xml, const char *tag_start, const char *tag_end, char *buffer, size_t buffer_size) {
     const char *start = strstr(xml, tag_start);
@@ -29,24 +31,9 @@ static char* extract_xml_content(const char *xml, const char *tag_start, const c
     }
     
     size_t len = end - start;
-    if (len >= buffer_size) {
-        len = buffer_size - 1;
-    }
-    
-    strncpy(buffer, start, len);
-    buffer[len] = '\0';
-    
     // Trim leading/trailing whitespace
-    char *trim_start = buffer;
-    char *trim_end = buffer + len - 1;
-    
-    while (*trim_start && isspace(*trim_start)) trim_start++;
-    while (trim_end > trim_start && isspace(*trim_end)) *trim_end-- = '\0';
-    
-    if (trim_start != buffer) {
-        memmove(buffer, trim_start, strlen(trim_start) + 1);
-    }
-    
+    copy_trimmed_value(buffer, buffer_size, start, len);
+
     return buffer;
 }
 
@@ -60,8 +47,7 @@ int parse_device_info(const char *response, onvif_device_info_t *device_info) {
     
     // Log the first 500 characters of the response for debugging
     char debug_buffer[501];
-    strncpy(debug_buffer, response, 500);
-    debug_buffer[500] = '\0';
+    safe_strcpy(debug_buffer, response, 501, 0);
     log_info("Parsing response: %s...", debug_buffer);
     
     // Check if this is a valid ONVIF response and not a probe message
@@ -93,21 +79,8 @@ int parse_device_info(const char *response, onvif_device_info_t *device_info) {
                     const char *end = strstr(start, "</");
                     if (end) {
                         size_t len = end - start;
-                        if (len < sizeof(xaddrs)) {
-                            strncpy(xaddrs, start, len);
-                            xaddrs[len] = '\0';
-                            
-                            // Trim whitespace
-                            char *trim_start = xaddrs;
-                            char *trim_end = xaddrs + len - 1;
-                            
-                            while (*trim_start && isspace(*trim_start)) trim_start++;
-                            while (trim_end > trim_start && isspace(*trim_end)) *trim_end-- = '\0';
-                            
-                            if (trim_start != xaddrs) {
-                                memmove(xaddrs, trim_start, strlen(trim_start) + 1);
-                            }
-                        }
+                        // Trim whitespace
+                        copy_trimmed_value(xaddrs, sizeof(xaddrs), start, len);
                     }
                 }
             }
@@ -124,12 +97,10 @@ int parse_device_info(const char *response, onvif_device_info_t *device_info) {
     // Split multiple URLs if present (some devices return multiple space-separated URLs)
     const char *url = strtok(xaddrs, " \t\n\r");
     if (url) {
-        strncpy(device_info->device_service, url, MAX_URL_LENGTH - 1);
-        device_info->device_service[MAX_URL_LENGTH - 1] = '\0';
+        safe_strcpy(device_info->device_service, url, MAX_URL_LENGTH, 0);
         
         // Also store as endpoint
-        strncpy(device_info->endpoint, url, MAX_URL_LENGTH - 1);
-        device_info->endpoint[MAX_URL_LENGTH - 1] = '\0';
+        safe_strcpy(device_info->endpoint, url, MAX_URL_LENGTH, 0);
         
         log_debug("Found device service URL: %s", device_info->device_service);
     } else {
@@ -152,8 +123,7 @@ int parse_device_info(const char *response, onvif_device_info_t *device_info) {
                 len = sizeof(device_info->ip_address) - 1;
             }
             
-            strncpy(device_info->ip_address, ip_start, len);
-            device_info->ip_address[len] = '\0';
+            safe_strcpy(device_info->ip_address, ip_start, 64, len);
             log_debug("Extracted IP address: %s", device_info->ip_address);
         }
     }
@@ -170,8 +140,7 @@ int parse_device_info(const char *response, onvif_device_info_t *device_info) {
     if (strlen(types) > 0) {
         // Extract model information if available
         if (strstr(types, "NetworkVideoTransmitter")) {
-            strncpy(device_info->model, "NetworkVideoTransmitter", sizeof(device_info->model) - 1);
-            device_info->model[sizeof(device_info->model) - 1] = '\0';
+            safe_strcpy(device_info->model, "NetworkVideoTransmitter", sizeof(device_info->model), 0);
         }
     }
     
@@ -417,8 +386,7 @@ int receive_discovery_responses(onvif_device_info_t *devices, int max_devices) {
             
             // Dump the first 500 characters of response for debugging
             char debug_buffer[501];
-            strncpy(debug_buffer, buffer, 500);
-            debug_buffer[500] = '\0';
+            safe_strcpy(debug_buffer, buffer, 501, 0);
             log_info("Response (first 500 chars): %s", debug_buffer);
             
             // Parse device information

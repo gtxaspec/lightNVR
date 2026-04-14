@@ -19,6 +19,8 @@
 #include <libavutil/time.h>
 
 #include "core/logger.h"
+#include "core/path_utils.h"
+#include "utils/strings.h"
 #include "video/hls_writer.h"
 #include "video/detection_integration.h"
 #include "video/detection_frame_processing.h"
@@ -99,8 +101,7 @@ static void cleanup_old_segments(const char *output_dir, int max_segments) {
         // Get file stats
         snprintf(filepath, sizeof(filepath), "%s/%s", output_dir, entry->d_name);
         if (stat(filepath, &st) == 0) {
-            strncpy(segments[i].filename, entry->d_name, 255);
-            segments[i].filename[255] = '\0';
+            safe_strcpy(segments[i].filename, entry->d_name, 256, 0);
             segments[i].mtime = st.st_mtime;
             i++;
         }
@@ -164,8 +165,8 @@ hls_writer_t *hls_writer_create(const char *output_dir, const char *stream_name,
     }
 
     // Copy output directory and stream name
-    strncpy(writer->output_dir, output_dir, MAX_PATH_LENGTH - 1);
-    strncpy(writer->stream_name, stream_name, MAX_STREAM_NAME - 1);
+    safe_strcpy(writer->output_dir, output_dir, MAX_PATH_LENGTH, 0);
+    safe_strcpy(writer->stream_name, stream_name, MAX_STREAM_NAME, 0);
 
     //  Ensure segment duration is reasonable but allow lower values for lower latency
     if (segment_duration < 1) {
@@ -408,81 +409,19 @@ static int ensure_output_directory(hls_writer_t *writer) {
                 dir_path, safe_dir_path);
 
         // Update the writer's output_dir field with the safe path
-        strncpy(writer->output_dir, safe_dir_path, MAX_PATH_LENGTH - 1);
-        writer->output_dir[MAX_PATH_LENGTH - 1] = '\0';
+        safe_strcpy(writer->output_dir, safe_dir_path, MAX_PATH_LENGTH, 0);
     }
 
-    // Always use the safe path
-    dir_path = safe_dir_path;
-
-    // Check if directory exists
-    if (stat(dir_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        log_warn("HLS output directory does not exist or is not a directory: %s", dir_path);
-
-        // Create directory using direct C functions to handle paths with spaces
-        char temp_path[MAX_PATH_LENGTH];
-        strncpy(temp_path, dir_path, MAX_PATH_LENGTH - 1);
-        temp_path[MAX_PATH_LENGTH - 1] = '\0';
-
-        // Create parent directories one by one
-        for (char *p = temp_path + 1; *p; p++) {
-            if (*p == '/') {
-                *p = '\0';
-                if (mkdir(temp_path, 0755) != 0 && errno != EEXIST) {
-                    log_warn("Failed to create parent directory: %s (error: %s)",
-                            temp_path, strerror(errno));
-                }
-                *p = '/';
-            }
-        }
-
-        // Create the final directory
-        if (mkdir(temp_path, 0755) != 0 && errno != EEXIST) {
-            log_error("Failed to create output directory: %s (error: %s)",
-                    temp_path, strerror(errno));
-            return -1;
-        }
-
-        log_info("Created HLS output directory: %s", dir_path);
-
-        // Set permissions via fd to avoid TOCTOU between mkdir and chmod
-        {
-            int dir_fd = open(dir_path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-            if (dir_fd >= 0) {
-                if (fchmod(dir_fd, 0755) != 0) {
-                    log_warn("Failed to set permissions on directory: %s (error: %s)",
-                            dir_path, strerror(errno));
-                }
-                close(dir_fd);
-            }
-        }
+    // Create directory if necessary
+    if (mkdir_recursive(safe_dir_path)) {
+        log_error("Failed to create HLS output directory %s: %s", safe_dir_path, strerror(errno));
+        return -1;
     }
 
-    // Ensure the directory is writable. Use open()+fstatat()+fchmod() to avoid
-    // TOCTOU race between access() check and subsequent open() (#34).
-    {
-        int dir_fd = open(dir_path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-        if (dir_fd < 0) {
-            log_error("Failed to open HLS output directory: %s (error: %s)", dir_path, strerror(errno));
-            return -1;
-        }
-
-        struct stat dir_st;
-        if (fstat(dir_fd, &dir_st) != 0) {
-            log_error("Failed to stat HLS output directory fd: %s (error: %s)", dir_path, strerror(errno));
-            close(dir_fd);
-            return -1;
-        }
-
-        if (!(dir_st.st_mode & S_IWUSR)) {
-            log_warn("HLS output directory may not be writable: %s, attempting permission fix", dir_path);
-            if (fchmod(dir_fd, 0755) != 0) {
-                log_warn("Failed to set permissions on directory: %s (error: %s)",
-                        dir_path, strerror(errno));
-            }
-        }
-
-        close(dir_fd);
+    // Ensure the directory is writable
+    if (chmod_path(safe_dir_path, 0755)) {
+        // Not fatal
+        log_warn("Failed to set permissions on directory: %s", safe_dir_path);
     }
 
     return 0;
@@ -936,12 +875,11 @@ void hls_writer_close(hls_writer_t *writer) {
     __sync_synchronize();
 
     // Store stream name for logging - use a local copy to avoid potential race conditions
-    char stream_name[MAX_STREAM_NAME] = {0};
+    char stream_name[MAX_STREAM_NAME];
 
     // Copy stream name for logging; fall back to "unknown" if not yet set
     if (writer->stream_name[0] != '\0') {
-        strncpy(stream_name, writer->stream_name, MAX_STREAM_NAME - 1);
-        stream_name[MAX_STREAM_NAME - 1] = '\0';
+        safe_strcpy(stream_name, writer->stream_name, MAX_STREAM_NAME, 0);
     } else {
         strcpy(stream_name, "unknown");
     }

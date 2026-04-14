@@ -23,7 +23,10 @@
 #include "core/logger.h"
 #include "core/daemon.h"
 #include "core/shutdown_coordinator.h"
+#include "core/curl_init.h"
 #include "core/mqtt_client.h"
+#include "core/path_utils.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/stream_state.h"
 #include "video/stream_state_adapter.h"
@@ -42,7 +45,6 @@
 #include "video/onvif_discovery.h"
 #include "video/ffmpeg_leak_detector.h"
 #include "video/onvif_motion_recording.h"
-#include "core/curl_init.h"
 #include "telemetry/stream_metrics.h"
 #include "telemetry/player_telemetry.h"
 
@@ -350,92 +352,13 @@ static int check_and_kill_existing_instance(const char *pid_file) {
     return 0;
 }
 
-// Function to create PID file
-static int create_pid_file(const char *pid_file) {
-    char pid_str[16];
-    int fd;
-
-    // Make sure the directory exists
-    const char *last_slash = strrchr(pid_file, '/');
-    if (last_slash) {
-        char dir_path[MAX_PATH_LENGTH] = {0};
-        size_t dir_len = (size_t)(last_slash - pid_file);
-        strncpy(dir_path, pid_file, dir_len);
-        dir_path[dir_len] = '\0';
-
-        // Create directory if it doesn't exist
-        struct stat st;
-        if (stat(dir_path, &st) != 0) {
-            if (mkdir(dir_path, 0755) != 0 && errno != EEXIST) {
-                log_error("Could not create directory for PID file: %s", strerror(errno));
-                return -1;
-            }
-        }
-    }
-
-    // Try to open the PID file with exclusive creation first
-    fd = open(pid_file, O_RDWR | O_CREAT | O_EXCL, 0644);
-    if (fd < 0 && errno == EEXIST) {
-        // File exists, try to open it normally
-        fd = open(pid_file, O_RDWR | O_CREAT, 0644);
-    }
-
-    if (fd < 0) {
-        log_error("Could not open PID file %s: %s", pid_file, strerror(errno));
-        return -1;
-    }
-
-    // Lock the PID file to prevent multiple instances
-    if (lockf(fd, F_TLOCK, 0) < 0) {
-        log_error("Could not lock PID file %s: %s", pid_file, strerror(errno));
-        close(fd);
-        return -1;
-    }
-
-    // Truncate the file to ensure we overwrite any existing content
-    if (ftruncate(fd, 0) < 0) {
-        log_warn("Could not truncate PID file: %s", strerror(errno));
-        // Continue anyway
-    }
-
-    // Write PID to file
-    sprintf(pid_str, "%d\n", getpid());
-    if (write(fd, pid_str, strlen(pid_str)) != strlen(pid_str)) {
-        log_error("Could not write to PID file %s: %s", pid_file, strerror(errno));
-        close(fd);
-        unlink(pid_file);  // Try to remove the file
-        return -1;
-    }
-
-    // Sync to ensure the PID is written to disk
-    fsync(fd);
-
-    // Keep file open to maintain lock
-    return fd;
-}
-
-// Function to remove PID file
-static void remove_pid_file(int fd, const char *pid_file) {
-    if (fd >= 0) {
-        // Release the lock by closing the file
-        close(fd);
-    }
-
-    // Try to remove the file
-    if (unlink(pid_file) != 0) {
-        log_warn("Failed to remove PID file %s: %s", pid_file, strerror(errno));
-    } else {
-        log_info("Successfully removed PID file %s", pid_file);
-    }
-}
-
 // Function to daemonize the process
 static int daemonize(const char *pid_file) {
-    int result = init_daemon(pid_file);
+    int fd = init_daemon(pid_file);
 
     // If daemon initialization failed, return error
-    if (result != 0) {
-        return result;
+    if (fd < 0) {
+        return -1;
     }
 
     // We're now in the child process, set daemon_mode flag
@@ -444,8 +367,8 @@ static int daemonize(const char *pid_file) {
     // Make sure the running flag is set to true
     running = true;
 
-    // Return success
-    return 0;
+    // Return locked PID fd
+    return fd;
 }
 
 // Function to check and ensure recording is active for streams that have recording enabled
@@ -549,8 +472,7 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--config") == 0) {
             if (i + 1 < argc) {
                 // Set config file path
-                strncpy(custom_config_path, argv[i+1], MAX_PATH_LENGTH - 1);
-                custom_config_path[MAX_PATH_LENGTH - 1] = '\0';
+                safe_strcpy(custom_config_path, argv[i+1], MAX_PATH_LENGTH, 0);
                 i++;
             } else {
                 log_error("Missing config file path");
@@ -668,14 +590,14 @@ int main(int argc, char *argv[]) {
     // Daemonize if requested. This needs to happen before launching any threads.
     if (daemon_mode) {
         log_info("Starting in daemon mode");
-        if (daemonize(config.pid_file) != 0) {
+        pid_fd = daemonize(config.pid_file);
+        if (pid_fd < 0) {
             log_error("Failed to daemonize");
             return EXIT_FAILURE;
         }
-        // In daemon mode, the PID file is handled by daemon.c
     } else {
-        // Create PID file (only for non-daemon mode)
-        pid_fd = create_pid_file(config.pid_file);
+        // Create PID file directly (only for non-daemon mode)
+        pid_fd = write_pid_file(config.pid_file);
         if (pid_fd < 0) {
             log_error("Failed to create PID file");
             return EXIT_FAILURE;
@@ -750,20 +672,14 @@ int main(int argc, char *argv[]) {
                     config.web_root, storage_web_path);
 
             // Create the directory in our storage path
-            if (mkdir(storage_web_path, 0755) != 0 && errno != EEXIST) {
+            if (mkdir_recursive(storage_web_path)) {
                 log_error("Failed to create web root in storage path: %s", strerror(errno));
                 return EXIT_FAILURE;
             }
 
             // Create parent directory for symlink if needed
-            char parent_dir[MAX_PATH_LENGTH];
-            strncpy(parent_dir, config.web_root, sizeof(parent_dir) - 1);
-            char *last_slash = strrchr(parent_dir, '/');
-            if (last_slash) {
-                *last_slash = '\0';
-                if (mkdir(parent_dir, 0755) != 0 && errno != EEXIST) {
-                    log_warn("Failed to create parent directory for web root symlink: %s", strerror(errno));
-                }
+            if (ensure_path(config.web_root)) {
+                log_warn("Failed to create parent directory for web root symlink");
             }
 
             // Create the symlink
@@ -772,15 +688,15 @@ int main(int argc, char *argv[]) {
                         config.web_root, storage_web_path, strerror(errno));
 
                 // Fall back to using the storage path directly
-                strncpy(config.web_root, storage_web_path, MAX_PATH_LENGTH - 1);
+                safe_strcpy(config.web_root, storage_web_path, MAX_PATH_LENGTH, 0);
                 log_warn("Using storage path directly for web root: %s", config.web_root);
             } else {
                 log_info("Created symlink from %s to %s", config.web_root, storage_web_path);
             }
         } else {
             // Try to create it directly
-            if (mkdir(config.web_root, 0755) != 0) {
-                log_error("Failed to create web root directory: %s", strerror(errno));
+            if (mkdir_recursive(config.web_root)) {
+                log_error("Failed to create web root directory");
                 return EXIT_FAILURE;
             }
 
@@ -912,6 +828,7 @@ int main(int argc, char *argv[]) {
     // Initialize web server with direct handlers
     http_server_config_t server_config = {
         .port = config.web_port,
+        .bind_ip = config.web_bind_ip,
         .web_root = config.web_root,
         .auth_enabled = config.web_auth_enabled,
         .cors_enabled = true,
@@ -922,18 +839,18 @@ int main(int argc, char *argv[]) {
     };
 
     // Set CORS allowed origins, methods, and headers
-    strncpy(server_config.allowed_origins, "*", sizeof(server_config.allowed_origins) - 1);
-    strncpy(server_config.allowed_methods, "GET, POST, PUT, DELETE, OPTIONS", sizeof(server_config.allowed_methods) - 1);
-    strncpy(server_config.allowed_headers, "Content-Type, Authorization", sizeof(server_config.allowed_headers) - 1);
+    safe_strcpy(server_config.allowed_origins, "*", sizeof(server_config.allowed_origins), 0);
+    safe_strcpy(server_config.allowed_methods, "GET, POST, PUT, DELETE, OPTIONS", sizeof(server_config.allowed_methods), 0);
+    safe_strcpy(server_config.allowed_headers, "Content-Type, Authorization", sizeof(server_config.allowed_headers), 0);
 
     if (config.web_auth_enabled) {
-        strncpy(server_config.username, config.web_username, sizeof(server_config.username) - 1);
-        strncpy(server_config.password, config.web_password, sizeof(server_config.password) - 1);
+        safe_strcpy(server_config.username, config.web_username, sizeof(server_config.username), 0);
+        safe_strcpy(server_config.password, config.web_password, sizeof(server_config.password), 0);
     }
 
     // Initialize HTTP server (libuv + llhttp)
-    log_info("Initializing web server on port %d (daemon_mode: %s)",
-             config.web_port, daemon_mode ? "true" : "false");
+    log_info("Initializing web server on %s:%d (daemon_mode: %s)",
+             config.web_bind_ip, config.web_port, daemon_mode ? "true" : "false");
 
     http_server = libuv_server_init(&server_config);
     if (!http_server) {
@@ -962,13 +879,13 @@ int main(int argc, char *argv[]) {
 
     log_info("Starting web server...");
     if (http_server_start(http_server) != 0) {
-        log_error("Failed to start libuv web server on port %d", config.web_port);
+        log_error("Failed to start libuv web server on %s:%d", config.web_bind_ip, config.web_port);
         http_server_destroy(http_server);
         http_server = NULL;  // Prevent double-free in cleanup
         goto cleanup;
     }
 
-    log_info("libuv web server started successfully on port %d", config.web_port);
+    log_info("libuv web server started successfully on %s:%d", config.web_bind_ip, config.web_port);
 
     // Initialize and start health check system for web server self-healing
     init_health_check_system();
@@ -1016,8 +933,7 @@ int main(int argc, char *argv[]) {
 
             if (is_api_based) {
                 // For API-based or built-in detection (motion, onvif), use the model string as-is
-                strncpy(model_path, config.streams[i].detection_model, MAX_PATH_LENGTH - 1);
-                model_path[MAX_PATH_LENGTH - 1] = '\0';
+                safe_strcpy(model_path, config.streams[i].detection_model, MAX_PATH_LENGTH, 0);
                 log_info("Using built-in/API detection for stream %s: %s",
                         config.streams[i].name, model_path);
             } else if (config.streams[i].detection_model[0] != '/') {
@@ -1039,7 +955,7 @@ int main(int argc, char *argv[]) {
                     log_error("Detection will not work properly!");
 
                     // Create the models directory if it doesn't exist
-                    if (mkdir(config.models_path, 0755) != 0 && errno != EEXIST) {
+                    if (mkdir_recursive(config.models_path)) {
                         log_error("Failed to create models directory: %s", strerror(errno));
                     } else {
                         log_info("Created models directory: %s", config.models_path);
@@ -1047,8 +963,7 @@ int main(int argc, char *argv[]) {
                 }
             } else {
                 // Absolute path
-                strncpy(model_path, config.streams[i].detection_model, MAX_PATH_LENGTH - 1);
-                model_path[MAX_PATH_LENGTH - 1] = '\0';
+                safe_strcpy(model_path, config.streams[i].detection_model, MAX_PATH_LENGTH, 0);
 
                 // Check if file exists
                 FILE *model_file = fopen(model_path, "r");
@@ -1636,14 +1551,8 @@ cleanup:
         pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
     }
 
-    // Handle PID file cleanup based on mode
-    if (daemon_mode) {
-        // In daemon mode, call cleanup_daemon to handle the PID file
-        cleanup_daemon();
-    } else if (pid_fd >= 0) {
-        // In normal mode, remove the PID file directly
-        remove_pid_file(pid_fd, config.pid_file);
-    }
+    // Close (unlock) and delete the PID file
+    remove_pid_file(pid_fd, config.pid_file);
 
     log_info("Cleanup complete, shutting down");
 

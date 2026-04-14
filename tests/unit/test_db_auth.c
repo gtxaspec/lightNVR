@@ -17,6 +17,7 @@
 #include <sqlite3.h>
 
 #include "unity.h"
+#include "utils/strings.h"
 #include "database/db_core.h"
 #include "database/db_auth.h"
 
@@ -387,8 +388,8 @@ void test_ip_allowed_for_user_accepts_comma_separated_cidrs(void) {
     user_t user;
     memset(&user, 0, sizeof(user));
     user.has_login_cidr_restriction = true;
-    strncpy(user.allowed_login_cidrs, "127.0.0.1/32, ::1/128",
-            sizeof(user.allowed_login_cidrs) - 1);
+    safe_strcpy(user.allowed_login_cidrs, "127.0.0.1/32, ::1/128",
+            sizeof(user.allowed_login_cidrs), 0);
 
     TEST_ASSERT_TRUE(db_auth_ip_allowed_for_user(&user, "127.0.0.1"));
     TEST_ASSERT_TRUE(db_auth_ip_allowed_for_user(&user, "::1"));
@@ -399,8 +400,8 @@ void test_ip_allowed_for_user_accepts_single_host_ip_entries(void) {
     user_t user;
     memset(&user, 0, sizeof(user));
     user.has_login_cidr_restriction = true;
-    strncpy(user.allowed_login_cidrs, "127.0.0.1\n2001:db8::1",
-            sizeof(user.allowed_login_cidrs) - 1);
+    safe_strcpy(user.allowed_login_cidrs, "127.0.0.1\n2001:db8::1",
+            sizeof(user.allowed_login_cidrs), 0);
 
     TEST_ASSERT_TRUE(db_auth_ip_allowed_for_user(&user, "127.0.0.1"));
     TEST_ASSERT_TRUE(db_auth_ip_allowed_for_user(&user, "2001:db8::1"));

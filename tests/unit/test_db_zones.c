@@ -15,6 +15,7 @@
 #include <sqlite3.h>
 
 #include "unity.h"
+#include "utils/strings.h"
 #include "database/db_core.h"
 #include "database/db_zones.h"
 #include "database/db_streams.h"
@@ -25,10 +26,10 @@ static detection_zone_t make_zone(const char *id, const char *stream,
                                   const char *name, bool enabled) {
     detection_zone_t z;
     memset(&z, 0, sizeof(z));
-    strncpy(z.id,          id,     sizeof(z.id)     - 1);
-    strncpy(z.stream_name, stream, sizeof(z.stream_name) - 1);
-    strncpy(z.name,        name,   sizeof(z.name)   - 1);
-    strncpy(z.color,       "#ff0000", sizeof(z.color) - 1);
+    safe_strcpy(z.id,          id,     sizeof(z.id),          0);
+    safe_strcpy(z.stream_name, stream, sizeof(z.stream_name), 0);
+    safe_strcpy(z.name,        name,   sizeof(z.name),        0);
+    safe_strcpy(z.color,       "#ff0000", sizeof(z.color), 0);
     z.enabled = enabled;
     /* Triangle polygon */
     z.polygon[0].x = 0.0f; z.polygon[0].y = 0.0f;
@@ -36,7 +37,7 @@ static detection_zone_t make_zone(const char *id, const char *stream,
     z.polygon[2].x = 0.5f; z.polygon[2].y = 1.0f;
     z.polygon_count = 3;
     z.min_confidence = 0.5f;
-    strncpy(z.filter_classes, "person,car", sizeof(z.filter_classes) - 1);
+    safe_strcpy(z.filter_classes, "person,car", sizeof(z.filter_classes), 0);
     return z;
 }
 
@@ -48,8 +49,8 @@ static void clear_zones(void) {
 static void ensure_test_stream(const char *stream_name) {
     stream_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    strncpy(cfg.name, stream_name, sizeof(cfg.name) - 1);
-    strncpy(cfg.url, "rtsp://localhost/test", sizeof(cfg.url) - 1);
+    safe_strcpy(cfg.name, stream_name, sizeof(cfg.name), 0);
+    safe_strcpy(cfg.url, "rtsp://localhost/test", sizeof(cfg.url), 0);
     cfg.enabled = true;
     cfg.width   = 1920;
     cfg.height  = 1080;

@@ -29,6 +29,7 @@
 #include "video/packet_buffer.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 
 // Strategy private data
 typedef struct {
@@ -318,11 +319,11 @@ pre_buffer_strategy_t* create_memory_packet_strategy(const char *stream_name,
         return NULL;
     }
 
-    strncpy(data->stream_name, stream_name, sizeof(data->stream_name) - 1);
+    safe_strcpy(data->stream_name, stream_name, sizeof(data->stream_name), 0);
 
     strategy->name = "memory_packet";
     strategy->type = BUFFER_STRATEGY_MEMORY_PACKET;
-    strncpy(strategy->stream_name, stream_name, sizeof(strategy->stream_name) - 1);
+    safe_strcpy(strategy->stream_name, stream_name, sizeof(strategy->stream_name), 0);
     strategy->private_data = data;
 
     // Set interface methods

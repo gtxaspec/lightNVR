@@ -13,6 +13,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
 #include "video/stream_state.h"
@@ -62,13 +63,10 @@ static void get_stream_api_credentials(const stream_config_t *config,
         return;
     }
 
-    strncpy(safe_url, config->url, safe_url_size - 1);
-    safe_url[safe_url_size - 1] = '\0';
+    safe_strcpy(safe_url, config->url, safe_url_size, 0);
 
-    strncpy(onvif_username, config->onvif_username, onvif_username_size - 1);
-    onvif_username[onvif_username_size - 1] = '\0';
-    strncpy(onvif_password, config->onvif_password, onvif_password_size - 1);
-    onvif_password[onvif_password_size - 1] = '\0';
+    safe_strcpy(onvif_username, config->onvif_username, onvif_username_size, 0);
+    safe_strcpy(onvif_password, config->onvif_password, onvif_password_size, 0);
 
     use_separate_credentials = config->is_onvif ||
                               config->onvif_username[0] != '\0' ||
@@ -82,18 +80,15 @@ static void get_stream_api_credentials(const stream_config_t *config,
                                 extracted_username, sizeof(extracted_username),
                                 extracted_password, sizeof(extracted_password)) == 0) {
         if (onvif_username[0] == '\0' && extracted_username[0] != '\0') {
-            strncpy(onvif_username, extracted_username, onvif_username_size - 1);
-            onvif_username[onvif_username_size - 1] = '\0';
+            safe_strcpy(onvif_username, extracted_username, onvif_username_size, 0);
         }
         if (onvif_password[0] == '\0' && extracted_password[0] != '\0') {
-            strncpy(onvif_password, extracted_password, onvif_password_size - 1);
-            onvif_password[onvif_password_size - 1] = '\0';
+            safe_strcpy(onvif_password, extracted_password, onvif_password_size, 0);
         }
     }
 
     if (url_strip_credentials(config->url, safe_url, safe_url_size) != 0) {
-        strncpy(safe_url, config->url, safe_url_size - 1);
-        safe_url[safe_url_size - 1] = '\0';
+        safe_strcpy(safe_url, config->url, safe_url_size, 0);
     }
 }
 

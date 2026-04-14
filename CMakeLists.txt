@@ -388,9 +388,6 @@ message(STATUS "Excluding main.c from CORE_SOURCES (library build)")
 file(GLOB DATABASE_SOURCES "src/database/*.c")
 file(GLOB STORAGE_SOURCES "src/storage/*.c")
 file(GLOB UTILS_SOURCES "src/utils/*.c")
-# Exclude rebuild_recordings.c from UTILS_SOURCES to avoid multiple main functions
-list(FILTER UTILS_SOURCES EXCLUDE REGEX ".*rebuild_recordings\\.c$")
-message(STATUS "Excluding rebuild_recordings.c from main executable")
 file(GLOB_RECURSE WEB_SOURCES "src/web/*.c")
 
 # Filter web sources - exclude libuv sources (they're added separately via LIBUV_SERVER_SOURCES)
@@ -410,10 +407,10 @@ list(APPEND ROOT_SOURCES
 # errors when linking test executables against lightnvr_lib.
 list(FILTER ROOT_SOURCES EXCLUDE REGEX ".*sod/sod\\.c$")
 list(FILTER ROOT_SOURCES EXCLUDE REGEX ".*core/main\\.c$")
-list(FILTER ROOT_SOURCES EXCLUDE REGEX ".*utils/rebuild_recordings\\.c$")
+list(FILTER ROOT_SOURCES EXCLUDE REGEX ".*tools/.*\\.c$")
 # Also exclude libuv sources from ROOT_SOURCES (they're added separately)
 list(FILTER ROOT_SOURCES EXCLUDE REGEX ".*libuv_.*\\.c$")
-message(STATUS "Excluding main.c and rebuild_recordings.c from ROOT_SOURCES")
+message(STATUS "Excluding main.c and tools from ROOT_SOURCES")
 
 # Collect video sources from src/video, then exclude motion_detection_optimized.c,
 # detection_thread_pool.c, and the original hls_writer_thread.c (since we're using our split version).
@@ -504,9 +501,11 @@ add_executable(lightnvr src/core/main.c)
 
 # Define source files for rebuild_recordings utility (excluding inih)
 set(REBUILD_RECORDINGS_SOURCES
-    src/utils/rebuild_recordings.c
+    src/tools/rebuild_recordings.c
     src/core/config.c
     src/core/logger.c
+    src/core/path_utils.c
+    src/utils/strings.c
     src/database/db_core.c
     src/database/db_streams.c
     src/database/db_recordings.c

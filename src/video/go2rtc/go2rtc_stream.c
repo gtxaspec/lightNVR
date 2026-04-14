@@ -3,15 +3,6 @@
  * @brief Implementation of the go2rtc stream integration module
  */
 
-#include "video/go2rtc/go2rtc_stream.h"
-#include "video/go2rtc/go2rtc_process.h"
-#include "video/go2rtc/go2rtc_api.h"
-#include "video/go2rtc/go2rtc_integration.h"
-#include "video/go2rtc/dns_cleanup.h"
-#include "core/config.h"
-#include "core/logger.h"
-#include "core/url_utils.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +15,16 @@
 #include <curl/curl.h>
 #include <fcntl.h>
 #include <netdb.h>
+
+#include "video/go2rtc/go2rtc_stream.h"
+#include "video/go2rtc/go2rtc_process.h"
+#include "video/go2rtc/go2rtc_api.h"
+#include "video/go2rtc/go2rtc_integration.h"
+#include "video/go2rtc/dns_cleanup.h"
+#include "core/config.h"
+#include "core/logger.h"
+#include "core/url_utils.h"
+#include "utils/strings.h"
 
 // Default API host
 #define DEFAULT_API_HOST "localhost"
@@ -134,8 +135,7 @@ bool go2rtc_stream_register(const char *stream_id, const char *stream_url,
 
     // Use a static buffer for the modified URL to avoid memory allocation issues
     char modified_url[URL_BUFFER_SIZE];
-    strncpy(modified_url, stream_url, URL_BUFFER_SIZE - 1);
-    modified_url[URL_BUFFER_SIZE - 1] = '\0';
+    safe_strcpy(modified_url, stream_url, URL_BUFFER_SIZE, 0);
 
     // Inject credentials into URL if provided and not already embedded
     {
@@ -143,8 +143,7 @@ bool go2rtc_stream_register(const char *stream_id, const char *stream_url,
         if (url_apply_credentials(modified_url, username, password,
                                   credentialed_url, sizeof(credentialed_url)) == 0) {
             if (strcmp(credentialed_url, modified_url) != 0) {
-                strncpy(modified_url, credentialed_url, URL_BUFFER_SIZE - 1);
-                modified_url[URL_BUFFER_SIZE - 1] = '\0';
+                safe_strcpy(modified_url, credentialed_url, URL_BUFFER_SIZE, 0);
                 log_info("Applied credentials to go2rtc source URL for registration");
             }
         }
@@ -181,8 +180,7 @@ bool go2rtc_stream_register(const char *stream_id, const char *stream_url,
     // Append fragment parameters to URL
     char new_url[URL_BUFFER_SIZE];
     snprintf(new_url, URL_BUFFER_SIZE, "%s%s", modified_url, fragment_params);
-    strncpy(modified_url, new_url, URL_BUFFER_SIZE - 1);
-    modified_url[URL_BUFFER_SIZE - 1] = '\0';
+    safe_strcpy(modified_url, new_url, URL_BUFFER_SIZE, 0);
 
     log_info("Prepared go2rtc source URL for stream registration of %s: %s", stream_id, modified_url);
 
@@ -513,8 +511,6 @@ bool go2rtc_stream_is_ready(void) {
     // Use libcurl to check if the API is responsive
     CURL *curl = NULL;
     CURLcode res;
-    char url[URL_BUFFER_SIZE] = {0}; // Initialize to zeros
-    long http_code = 0;
 
     // Initialize curl with safety checks
     curl = curl_easy_init();
@@ -522,6 +518,9 @@ bool go2rtc_stream_is_ready(void) {
         log_warn("go2rtc_stream_is_ready: failed to initialize curl");
         return false;
     }
+
+    char url[URL_BUFFER_SIZE];
+    long http_code = 0;
 
     // Format the URL for the API endpoint with safety checks
     int url_result = snprintf(url, sizeof(url), "http://localhost:%d" GO2RTC_BASE_PATH "/api/streams", g_api_port);
@@ -658,8 +657,8 @@ bool go2rtc_stream_is_ready(void) {
         }
 
         // Log a truncated response to avoid buffer overflows in logging
-        char truncated_response[64] = {0};
-        strncpy(truncated_response, response, sizeof(truncated_response) - 1);
+        char truncated_response[64];
+        safe_strcpy(truncated_response, response, sizeof(truncated_response), 0);
         log_warn("go2rtc_stream_is_ready: socket HTTP request failed: %s...", truncated_response);
 
         close(sockfd);
@@ -846,12 +845,12 @@ bool go2rtc_stream_start_service(void) {
                 }
 
                 // Try to get the process log
-                char log_path[1024];
+                char log_path[MAX_PATH_LENGTH];
 
                 // Extract directory from g_config.log_file
-                char log_dir[1024] = {0};
                 if (g_config.log_file[0] != '\0') {
-                    strncpy(log_dir, g_config.log_file, sizeof(log_dir) - 1);
+                    char log_dir[MAX_PATH_LENGTH];
+                    safe_strcpy(log_dir, g_config.log_file, sizeof(log_dir), 0);
 
                     // Find the last slash to get the directory
                     char *last_slash = strrchr(log_dir, '/');

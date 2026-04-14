@@ -16,6 +16,8 @@
 #include "video/packet_buffer.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "core/path_utils.h"
+#include "utils/strings.h"
 
 // Global buffer pool
 static packet_buffer_pool_t buffer_pool;
@@ -235,7 +237,7 @@ packet_buffer_t* create_packet_buffer(const char *stream_name, int buffer_second
     }
     buffer->mutex_initialized = true;
 
-    strncpy(buffer->stream_name, stream_name, sizeof(buffer->stream_name) - 1);
+    safe_strcpy(buffer->stream_name, stream_name, sizeof(buffer->stream_name), 0);
     buffer->buffer_seconds = buffer_seconds;
     buffer->mode = mode;
 
@@ -263,7 +265,13 @@ packet_buffer_t* create_packet_buffer(const char *stream_name, int buffer_second
         if (config) {
             snprintf(buffer->disk_buffer_path, sizeof(buffer->disk_buffer_path),
                     "%s/.packet_buffer_%s", config->storage_path, stream_name);
-            mkdir(buffer->disk_buffer_path, 0755);
+            if (ensure_dir(buffer->disk_buffer_path)) {
+                log_error("Failed to create disk buffer directory %s: %s", buffer->disk_buffer_path, strerror(errno));
+                pthread_mutex_destroy(&buffer->mutex);
+                buffer->mutex_initialized = false;
+                pthread_mutex_unlock(&buffer_pool.pool_mutex);
+                return NULL;
+            }
         }
     }
 
@@ -314,8 +322,7 @@ void destroy_packet_buffer(packet_buffer_t *buffer) {
     pthread_mutex_unlock(&buffer_pool.pool_mutex);
 
     char stream_name_copy[256];
-    strncpy(stream_name_copy, buffer->stream_name, sizeof(stream_name_copy) - 1);
-    stream_name_copy[sizeof(stream_name_copy) - 1] = '\0';
+    safe_strcpy(stream_name_copy, buffer->stream_name, sizeof(stream_name_copy), 0);
 
     buffer->active = false;
 
@@ -662,7 +669,7 @@ int packet_buffer_set_disk_fallback(packet_buffer_t *buffer, bool enable, const 
     if (enable) {
         buffer->mode = BUFFER_MODE_HYBRID;
         if (disk_path) {
-            strncpy(buffer->disk_buffer_path, disk_path, sizeof(buffer->disk_buffer_path) - 1);
+            safe_strcpy(buffer->disk_buffer_path, disk_path, sizeof(buffer->disk_buffer_path), 0);
         }
         log_info("Enabled disk fallback for buffer: %s (path: %s)",
                  buffer->stream_name, buffer->disk_buffer_path);

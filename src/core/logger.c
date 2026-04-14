@@ -18,6 +18,8 @@
 #include "core/config.h"
 #include "core/logger.h"
 #include "core/logger_json.h"
+#include "core/path_utils.h"
+#include "utils/strings.h"
 
 // Logger state
 static struct {
@@ -55,10 +57,8 @@ static __thread char tls_log_component[64]  = {0};
 static __thread char tls_log_stream[128]    = {0};
 
 void log_set_thread_context(const char *component, const char *stream_name) {
-    strncpy(tls_log_component, component    ? component    : "", sizeof(tls_log_component) - 1);
-    tls_log_component[sizeof(tls_log_component) - 1] = '\0';
-    strncpy(tls_log_stream,    stream_name ? stream_name : "", sizeof(tls_log_stream) - 1);
-    tls_log_stream[sizeof(tls_log_stream) - 1] = '\0';
+    safe_strcpy(tls_log_component, component ? component : "", sizeof(tls_log_component), 0);
+    safe_strcpy(tls_log_stream, stream_name ? stream_name : "", sizeof(tls_log_stream), 0);
 }
 
 void log_clear_thread_context(void) {
@@ -184,48 +184,6 @@ void set_log_level(log_level_t level) {
     }
 }
 
-// Create directory if it doesn't exist
-static int create_directory(const char *path) {
-    struct stat st;
-
-    // Check if directory already exists
-    if (stat(path, &st) == 0) {
-        if (S_ISDIR(st.st_mode)) {
-            return 0; // Directory exists
-        } else {
-            return -1; // Path exists but is not a directory
-        }
-    }
-
-    // Create directory with permissions 0755
-    if (mkdir(path, 0755) != 0) {
-        if (errno == ENOENT) {
-            // Parent directory doesn't exist, try to create it recursively
-            char *parent_path = strdup(path);
-            if (!parent_path) {
-                return -1;
-            }
-
-            const char *parent_dir = dirname(parent_path);
-            int ret = create_directory(parent_dir);
-            free(parent_path);
-
-            if (ret != 0) {
-                return -1;
-            }
-
-            // Try again to create the directory
-            if (mkdir(path, 0755) != 0) {
-                return -1;
-            }
-        } else {
-            return -1;
-        }
-    }
-
-    return 0;
-}
-
 // Set the log file
 int set_log_file(const char *filename) {
     if (!filename) return -1;
@@ -246,7 +204,7 @@ int set_log_file(const char *filename) {
     }
 
     const char *dir = dirname(dir_path);
-    if (create_directory(dir) != 0) {
+    if (mkdir_recursive(dir) != 0) {
         free(dir_path);
         pthread_mutex_unlock(&logger.mutex);
         return -1;
@@ -263,8 +221,7 @@ int set_log_file(const char *filename) {
     }
 
     // Store filename for potential log rotation
-    strncpy(logger.log_filename, filename, sizeof(logger.log_filename) - 1);
-    logger.log_filename[sizeof(logger.log_filename) - 1] = '\0';
+    safe_strcpy(logger.log_filename, filename, sizeof(logger.log_filename), 0);
 
     pthread_mutex_unlock(&logger.mutex);
 
@@ -375,59 +332,32 @@ static void build_ctx_prefix(char *buf, size_t bufsz,
 static void do_log_internal(log_level_t level,
                              const char *component, const char *stream,
                              const char *format, va_list args) {
-    // Copy va_list: a va_list may only be traversed once; copying satisfies
-    // static-analysis tools (clang-analyzer-valist.Uninitialized).
-    va_list args_copy;
-    va_copy(args_copy, args);
-
-    // CRITICAL: Check if logger is shutting down or destroyed.
-    // Write directly to console without the mutex to avoid use-after-destroy.
-    if (logger.shutdown) {
-        char message[4096];
-        vsnprintf(message, sizeof(message), format, args_copy); // NOLINT(clang-analyzer-valist.Uninitialized)
-        va_end(args_copy);
-
-        time_t now;
-        struct tm tm_buf;
-        char timestamp[32];
-        time(&now);
-        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S",
-                 localtime_r(&now, &tm_buf));
-
-        char ctx_prefix[224] = {0};
-        build_ctx_prefix(ctx_prefix, sizeof(ctx_prefix), component, stream);
-
-        FILE *console = (level == LOG_LEVEL_ERROR) ? stderr : stdout;
-        fprintf(console, "[%s] [%s] %s%s\n",
-                timestamp, log_level_strings[level], ctx_prefix, message);
-        fflush(console);
-        return;
-    }
-
     // Only log messages at or below the configured log level.
     if (level > logger.log_level) {
-        va_end(args_copy);
         return;
     }
 
-    time_t now;
-    struct tm tm_buf;
-    char timestamp[32];
-    char iso_timestamp[32];
+    // Create timestamp
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
 
-    time(&now);
-    localtime_r(&now, &tm_buf);
-    strftime(timestamp,     sizeof(timestamp),     "%Y-%m-%d %H:%M:%S",  &tm_buf);
-    strftime(iso_timestamp, sizeof(iso_timestamp), "%Y-%m-%dT%H:%M:%S",  &tm_buf);
+    struct tm tm_buf;
+    localtime_r(&now.tv_sec, &tm_buf);
+
+    char timestamp[32];
+    size_t offset = strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm_buf);
+
+    unsigned int msec = (unsigned int)(now.tv_nsec / 1000000UL);
+    snprintf(timestamp + offset, sizeof(timestamp) - offset, ".%03u", msec);
 
     char message[4096];
-    vsnprintf(message, sizeof(message), format, args_copy); // NOLINT(clang-analyzer-valist.Uninitialized)
-    va_end(args_copy);
+    vsnprintf(message, sizeof(message), format, args);
 
     char ctx_prefix[224] = {0};
     build_ctx_prefix(ctx_prefix, sizeof(ctx_prefix), component, stream);
 
-    // Double-check shutdown before acquiring mutex.
+    // CRITICAL: Check if logger is shutting down or destroyed.
+    // Write directly to console without the mutex to avoid use-after-destroy.
     if (logger.shutdown) {
         FILE *console = (level == LOG_LEVEL_ERROR) ? stderr : stdout;
         fprintf(console, "[%s] [%s] %s%s\n",
@@ -464,6 +394,9 @@ static void do_log_internal(log_level_t level,
     pthread_mutex_unlock(&logger.mutex);
 
     if (write_json_log) {
+        char iso_timestamp[32];
+
+        strftime(iso_timestamp, sizeof(iso_timestamp), "%Y-%m-%dT%H:%M:%S",  &tm_buf);
         write_json_log(level, iso_timestamp, message);
     }
 }
@@ -605,8 +538,7 @@ int enable_syslog(const char *ident, int facility) {
     }
 
     // Store the identifier
-    strncpy(logger.syslog_ident, ident, sizeof(logger.syslog_ident) - 1);
-    logger.syslog_ident[sizeof(logger.syslog_ident) - 1] = '\0';
+    safe_strcpy(logger.syslog_ident, ident, sizeof(logger.syslog_ident), 0);
 
     // Open syslog connection
     // LOG_PID: include PID with each message

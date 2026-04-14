@@ -19,6 +19,7 @@
 #include <pthread.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <libgen.h>
 
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -761,17 +762,14 @@ int record_segment(const char *rtsp_url, const char *output_file, int duration, 
         // Additional diagnostics
         char *dir_path = strdup(output_file);
         if (dir_path) {
-            char *last_slash = strrchr(dir_path, '/');
-            if (last_slash) {
-                *last_slash = '\0';
-                struct stat dir_st;
-                if (stat(dir_path, &dir_st) != 0) {
-                    log_error("Directory does not exist: %s", dir_path);
-                } else if (!S_ISDIR(dir_st.st_mode)) {
-                    log_error("Path exists but is not a directory: %s", dir_path);
-                } else if (access(dir_path, W_OK) != 0) {
-                    log_error("Directory is not writable: %s", dir_path);
-                }
+            char *dir = dirname(dir_path);
+            struct stat dir_st;
+            if (stat(dir, &dir_st) != 0) {
+                log_error("Directory does not exist: %s", dir_path);
+            } else if (!S_ISDIR(dir_st.st_mode)) {
+                log_error("Path exists but is not a directory: %s", dir_path);
+            } else if (access(dir_path, W_OK) != 0) {
+                log_error("Directory is not writable: %s", dir_path);
             }
             free(dir_path);
         }
@@ -967,7 +965,10 @@ int record_segment(const char *rtsp_url, const char *output_file, int duration, 
 
                     log_info("Found first key frame, starting recording");
 
-                    // Notify caller that segment has officially started (aligned to keyframe)
+                    // Notify caller that segment has officially started (aligned to keyframe).
+                    // The callback (on_segment_started_cb in mp4_writer_thread.c) creates the
+                    // database recording entry at this point so that start_time is anchored
+                    // to a decodable keyframe rather than the wall-clock time of avformat_open_input.
                     if (!started_cb_called && started_cb) {
                         started_cb(cb_ctx);
                         started_cb_called = true;

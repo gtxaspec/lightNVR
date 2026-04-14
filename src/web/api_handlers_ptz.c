@@ -13,6 +13,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
+#include "utils/strings.h"
 #include "database/db_streams.h"
 #include "video/onvif_ptz.h"
 #include <cjson/cJSON.h>
@@ -471,8 +472,7 @@ void handle_ptz_goto_preset(const http_request_t *req, http_response_t *res) {
     }
 
     char preset_token[64];
-    strncpy(preset_token, token_json->valuestring, sizeof(preset_token) - 1);
-    preset_token[sizeof(preset_token) - 1] = '\0';
+    safe_strcpy(preset_token, token_json->valuestring, sizeof(preset_token), 0);
     cJSON_Delete(body);
 
     log_info("Handling POST /api/streams/%s/ptz/preset (goto %s)", stream_name, preset_token);

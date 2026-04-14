@@ -2,12 +2,6 @@
  * @file go2rtc_process.c
  * @brief Implementation of the go2rtc process management module
  */
-
-#include "video/go2rtc/go2rtc_process.h"
-#include "video/go2rtc/go2rtc_api.h"
-#include "core/logger.h"
-#include "core/config.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +16,14 @@
 #include <errno.h>
 #include <limits.h>
 #include <curl/curl.h>
+
+#include "video/go2rtc/go2rtc_process.h"
+#include "video/go2rtc/go2rtc_api.h"
+#include "core/logger.h"
+#include "core/config.h"
+#include "core/path_utils.h"
+#include "utils/strings.h"
+
 
 // Define PATH_MAX if not defined
 #ifndef PATH_MAX
@@ -212,8 +214,7 @@ static bool check_tcp_port_open(int port) {
             char *fields[5] = {NULL};
             char *saveptr = NULL;
             char linecopy[512];
-            strncpy(linecopy, line, sizeof(linecopy) - 1);
-            linecopy[sizeof(linecopy) - 1] = '\0';
+            safe_strcpy(linecopy, line, sizeof(linecopy), 0);
 
             int f = 0;
             char *tok = strtok_r(linecopy, " \t", &saveptr);
@@ -241,7 +242,7 @@ static bool check_tcp_port_open(int port) {
 
 /**
  * @brief Search PATH for an executable named @p name and write its full path
- *        into @p out.  Falls back to writing @p name verbatim if not found.
+ *        into @p out. Writes an empty string if not found.
  *
  * Replaces: popen("which <name> 2>/dev/null")
  */
@@ -250,24 +251,24 @@ static void find_binary_in_path(const char *name, char *out, size_t out_size) {
     if (!path_env) path_env = "/usr/local/bin:/usr/bin:/bin";
 
     char path_copy[4096];
-    strncpy(path_copy, path_env, sizeof(path_copy) - 1);
-    path_copy[sizeof(path_copy) - 1] = '\0';
+    safe_strcpy(path_copy, path_env, sizeof(path_copy), 0);
 
     char *saveptr = NULL;
     const char *dir = strtok_r(path_copy, ":", &saveptr);
     while (dir) {
         char candidate[PATH_MAX];
+        struct stat st;
         int n = snprintf(candidate, sizeof(candidate), "%s/%s", dir, name);
-        if (n > 0 && n < (int)sizeof(candidate) && access(candidate, X_OK) == 0) {
-            strncpy(out, candidate, out_size - 1);
-            out[out_size - 1] = '\0';
-            return;
+        if (n > 0 && n < (int)sizeof(candidate) && access(candidate, X_OK) == 0 && stat(candidate, &st) == 0) {
+            if (S_ISREG(st.st_mode)) {
+                safe_strcpy(out, candidate, out_size, 0);
+                return;
+            }
         }
         dir = strtok_r(NULL, ":", &saveptr);
     }
-    // Not found – use bare name and let execvp search PATH at exec time
-    strncpy(out, name, out_size - 1);
-    out[out_size - 1] = '\0';
+    // Not found
+    out[0] = '\0';
 }
 
 /**
@@ -342,8 +343,7 @@ static void recursive_remove_at(int parent_dfd, const char *name) {
  */
 static void recursive_remove(const char *path) {
     char parent[PATH_MAX];
-    strncpy(parent, path, sizeof(parent) - 1);
-    parent[sizeof(parent) - 1] = '\0';
+    safe_strcpy(parent, path, sizeof(parent), 0);
 
     const char *name;
     int parent_fd;
@@ -463,21 +463,14 @@ static bool is_go2rtc_running_as_service(int api_port) {
 static bool check_go2rtc_in_path(char *binary_path, size_t buffer_size) {
     // Use find_binary_in_path() which searches PATH directories directly
     // (no shell / popen needed)
-    char path[PATH_MAX] = {0};
-    find_binary_in_path("go2rtc", path, sizeof(path));
+    find_binary_in_path("go2rtc", binary_path, buffer_size);
 
-    if (path[0] != '\0' && access(path, X_OK) == 0) {
-        log_info("Found go2rtc binary in PATH: %s", path);
-        strncpy(binary_path, path, buffer_size - 1);
-        binary_path[buffer_size - 1] = '\0';
+    if (binary_path[0] != '\0' && access(binary_path, X_OK) == 0) {
+        log_info("Found go2rtc binary in PATH: %s", binary_path);
         return true;
     }
 
-    // If not found in PATH, just use "go2rtc" and let execl resolve it
-    strncpy(binary_path, "go2rtc", buffer_size - 1);
-    binary_path[buffer_size - 1] = '\0';
-    log_info("Using 'go2rtc' from PATH");
-    return true;
+    return false;
 }
 
 bool go2rtc_process_init(const char *binary_path, const char *config_dir, int api_port) {
@@ -492,12 +485,9 @@ bool go2rtc_process_init(const char *binary_path, const char *config_dir, int ap
     }
 
     // Check if config directory exists, create if not
-    struct stat st = {0};
-    if (stat(config_dir, &st) == -1) {
-        if (mkdir(config_dir, 0755) == -1) {
-            log_error("Failed to create go2rtc config directory: %s", config_dir);
-            return false;
-        }
+    if (mkdir_recursive(config_dir)) {
+        log_error("Failed to create go2rtc config directory: %s", config_dir);
+        return false;
     }
 
     // Store config directory
@@ -529,7 +519,7 @@ bool go2rtc_process_init(const char *binary_path, const char *config_dir, int ap
 
         if (binary_path && access(binary_path, X_OK) == 0) {
             // Use the provided binary path
-            strncpy(final_binary_path, binary_path, sizeof(final_binary_path) - 1);
+            safe_strcpy(final_binary_path, binary_path, sizeof(final_binary_path), 0);
             log_info("Using provided go2rtc binary: %s", final_binary_path);
         } else {
             if (binary_path) {
@@ -632,8 +622,7 @@ bool go2rtc_process_generate_config(const char *config_path, int api_port) {
             if (global_config->go2rtc_ice_servers[0] != '\0') {
                 // Parse comma-separated ICE servers
                 char ice_servers_copy[512];
-                strncpy(ice_servers_copy, global_config->go2rtc_ice_servers, sizeof(ice_servers_copy) - 1);
-                ice_servers_copy[sizeof(ice_servers_copy) - 1] = '\0';
+                safe_strcpy(ice_servers_copy, global_config->go2rtc_ice_servers, sizeof(ice_servers_copy), 0);
 
                 char *token = strtok(ice_servers_copy, ",");
                 while (token != NULL) {
@@ -802,18 +791,18 @@ static bool is_zombie_process(pid_t pid) {
  * This function calls waitpid with WNOHANG to reap any zombie children
  * without blocking.
  */
-static void reap_zombie_children(void) {
+static void reap_zombie_children(pid_t pid) {
     int status;
-    pid_t pid;
+    pid_t dead;
 
     // Reap all zombie children with WNOHANG (non-blocking)
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    while ((dead = waitpid(pid, &status, WNOHANG)) > 0) {
         if (WIFEXITED(status)) {
-            log_debug("Reaped zombie child process %d (exit code %d)", pid, WEXITSTATUS(status));
+            log_debug("Reaped zombie child process %d (exit code %d)", dead, WEXITSTATUS(status));
         } else if (WIFSIGNALED(status)) {
-            log_debug("Reaped zombie child process %d (killed by signal %d)", pid, WTERMSIG(status));
+            log_debug("Reaped zombie child process %d (killed by signal %d)", dead, WTERMSIG(status));
         } else {
-            log_debug("Reaped zombie child process %d", pid);
+            log_debug("Reaped zombie child process %d", dead);
         }
     }
 }
@@ -833,7 +822,11 @@ static bool wait_for_process_termination(pid_t pid, int timeout_ms) {
         // First try to reap if it's our child
         int status;
         pid_t result = waitpid(pid, &status, WNOHANG);
-        if (result == pid) {
+        // pid can be -1 for any child or -group_id for waiting on a group of
+        // processes. It can also be 0 to wait for processes with the same
+        // group ID as this process. In these cases, the pid returned will
+        // be nonzero on success but not match the input pid.
+        if (result == pid || (pid < 0 && result > 0)) {
             // Successfully reaped the process
             log_debug("Process %d successfully reaped", pid);
             return true;
@@ -889,135 +882,126 @@ static bool is_go2rtc_process(pid_t pid) {
 }
 
 /**
+ * Sends signal to all processes matching the specified command-line.
+ *
+ * See documentation for kill() and waitpid() for exact meaning of pids: some
+ * values have special meaning for killing process groups.
+ *
+ * @param name String identifying process; only used for logging
+ * @param pids The array of pids
+ * @param n_pids The size of the pid array
+ * @param sig The signal to send to the processes
+ * @param timeout_ms The amount of time to wait for each process to terminate
+ * @return The number of pids reaped (zero if none are terminated)
+ */
+static int killall_pids(const char *name, pid_t *pids, int n_pids, int sig, int timeout_ms) {
+    int i;
+    char *sig_name = strsignal(sig);
+    for (i = 0; i < n_pids; i++) {
+        log_info("Sending %s to '%s' process with PID: %d", sig_name, name, pids[i]);
+        if (kill(pids[i], sig) != 0 && errno != ESRCH) {
+            log_warn("Failed to send %s to '%s' process %d: %s",
+                        sig_name, name, pids[i], strerror(errno));
+        }
+    }
+    // Reap only the children we killed here if we sent a killing signal to the
+    // process. Note that any signal could, in theory, result in the death of
+    // the process, but we don't want to warn if we send e.g. SIGUSR2 and the process
+    // doesn't terminate.
+    int n_reaped = 0;
+    for (i = 0; i < n_pids; i++) {
+        if (wait_for_process_termination(pids[i], timeout_ms)) {
+            n_reaped++;
+        } else if (sig == SIGTERM || sig == SIGKILL) {
+            log_warn("Timed out waiting for '%s' process %d to terminate", name, pids[i]);
+        }
+    }
+
+    return n_reaped;
+}
+
+// Sends SIGTERM to all processes matching the specified command-line
+// Returns the number of processes remaining; if
+// all matching processes terminate, will return 0.
+static int killall_cmdline(const char *cmdline, int sig, int timeout_ms) {
+    pid_t pids[64];
+    int n_pids = scan_proc_for_cmdline(cmdline, pids, 64);
+    int n_reaped = killall_pids(cmdline, pids, n_pids, sig, timeout_ms);
+
+    return n_pids - n_reaped;
+}
+
+// Sends SIGTERM to all processes with the specified binary name.
+// Returns the number of processes remaining; if
+// all matching processes terminate, will return 0.
+static int killall_argv0(const char *cmdline, int sig, int timeout_ms) {
+    pid_t pids[64];
+    int n_pids = scan_proc_for_argv0_basename(cmdline, pids, 64);
+    int n_reaped = killall_pids(cmdline, pids, n_pids, sig, timeout_ms);
+
+    return n_pids - n_reaped;
+}
+
+/**
  * @brief Kill all go2rtc and related supervision processes
  *
  * @return true if all processes were killed, false otherwise
  */
 static bool kill_all_go2rtc_processes(void) {
     bool success = true;
-    pid_t pids_to_kill[64];  // Track PIDs we've sent signals to
-    int num_pids = 0;
 
-    // Reap any existing zombie children first
-    reap_zombie_children();
+    // Reap any existing zombie children first. Note that this reaps *all* child
+    // processes. If any other subprocesses or threads are terminating and the
+    // program expects them to be in a zombie state, this will reap them. As this
+    // is only called on shutdown, this catch-all should be safe but may be
+    // removed in the future.
+    reap_zombie_children(WAIT_ANY);
 
     // First kill any s6-supervise processes related to go2rtc
-    {
-        pid_t s6_pids[64];
-        int ns6 = scan_proc_for_cmdline("s6-supervise go2rtc", s6_pids, 64);
-        bool found_s6 = (ns6 > 0);
-        for (int i = 0; i < ns6; i++) {
-            log_info("Killing s6-supervise process with PID: %d", s6_pids[i]);
-            if (kill(s6_pids[i], SIGTERM) != 0 && errno != ESRCH) {
-                log_warn("Failed to send SIGTERM to s6-supervise process %d: %s",
-                         s6_pids[i], strerror(errno));
-            }
-        }
-        if (found_s6) {
-            sleep(2);
-            reap_zombie_children();
-        }
-    }
+    killall_cmdline("s6-supervise go2rtc", SIGTERM, 2000);
 
     // Also kill any s6-supervise processes related to go2rtc-healthcheck and go2rtc-log
-    {
-        pid_t s6_pids[64];
-        int ns6 = scan_proc_for_cmdline("s6-supervise go2rtc-", s6_pids, 64);
-        bool found_s6 = (ns6 > 0);
-        for (int i = 0; i < ns6; i++) {
-            log_info("Killing s6-supervise process with PID: %d", s6_pids[i]);
-            if (kill(s6_pids[i], SIGTERM) != 0 && errno != ESRCH) {
-                log_warn("Failed to send SIGTERM to s6-supervise process %d: %s",
-                         s6_pids[i], strerror(errno));
+    killall_cmdline("s6-supervise go2rtc-", SIGTERM, 2000);
+
+    // Scan /proc for go2rtc processes (replaces "ps | grep go2rtc | awk '{print $1}'")
+    // Wait up to 3 seconds for graceful termination
+    int remaining = killall_argv0("go2rtc", SIGTERM, 3000);
+
+    if (remaining > 0) {
+        // Forcefully kill
+        remaining = killall_argv0("go2rtc", SIGKILL, 500);
+    }
+
+    if (remaining > 0) {
+        // Final verification - check one more time
+        pid_t final_pids[64];
+        pid_t pgids[64];
+        int n_pgids = 0;
+        int nfinal = scan_proc_for_argv0_basename("go2rtc", final_pids, 64);
+        for (int j = 0; j < nfinal; j++) {
+            pid_t pid = final_pids[j];
+            if (is_go2rtc_process(pid) && !is_zombie_process(pid)) {
+                log_error("go2rtc process %d still running after SIGKILL", pid);
+                pid_t pgid = getpgid(pid);
+                if (pgid > 0 && pgid != getpgrp()) {
+                    // Use the negative of the process group ID to pass to kill()
+                    pgids[n_pgids++] = -pgid;
+                }
             }
         }
-        if (found_s6) {
-            sleep(2);
-            reap_zombie_children();
+
+        if (n_pgids > 0) {
+            remaining = n_pgids - killall_pids("go2rtc process group", pgids, n_pgids, SIGKILL, 500);
         }
     }
 
-    // Scan /proc for go2rtc processes (replaces "ps | grep go2rtc | awk '{print $1}'")
-    {
-        pid_t scan_pids[64];
-        int nscan = scan_proc_for_argv0_basename("go2rtc", scan_pids, 64);
-        num_pids = 0;
-        for (int i = 0; i < nscan && num_pids < 64; i++) {
-            pid_t pid = scan_pids[i];
-            if (is_go2rtc_process(pid)) {
-                pids_to_kill[num_pids++] = pid;
-                log_info("Killing go2rtc process with PID: %d", pid);
-                if (kill(pid, SIGTERM) != 0 && errno != ESRCH) {
-                    log_warn("Failed to send SIGTERM to go2rtc process %d: %s",
-                             pid, strerror(errno));
-                }
-            }
-        }
-
-        // Wait for processes to terminate with proper reaping
-        if (num_pids > 0) {
-            log_info("Waiting for %d go2rtc processes to terminate...", num_pids);
-
-            // Wait up to 3 seconds for graceful termination
-            bool all_terminated = true;
-            for (int i = 0; i < num_pids; i++) {
-                if (!wait_for_process_termination(pids_to_kill[i], 3000)) {
-                    all_terminated = false;
-                }
-            }
-
-            // Reap any zombies that might have been created
-            reap_zombie_children();
-
-            // Check if any processes are still running and force kill them
-            if (!all_terminated) {
-                pid_t still_pids[64];
-                int nstill = scan_proc_for_argv0_basename("go2rtc", still_pids, 64);
-                for (int j = 0; j < nstill; j++) {
-                    if (is_go2rtc_process(still_pids[j])) {
-                        log_warn("go2rtc process %d still running, sending SIGKILL", still_pids[j]);
-                        if (kill(still_pids[j], SIGKILL) != 0 && errno != ESRCH) {
-                            log_error("Failed to send SIGKILL to go2rtc process %d: %s",
-                                      still_pids[j], strerror(errno));
-                        }
-                    }
-                }
-                // Wait for SIGKILL to take effect and reap
-                usleep(500000);  // 500ms
-                reap_zombie_children();
-            }
-
-            // Final verification - check one more time
-            {
-                pid_t final_pids[64];
-                int nfinal = scan_proc_for_argv0_basename("go2rtc", final_pids, 64);
-                bool still_running = false;
-                for (int j = 0; j < nfinal; j++) {
-                    pid_t pid = final_pids[j];
-                    if (is_go2rtc_process(pid) && !is_zombie_process(pid)) {
-                        still_running = true;
-                        log_error("go2rtc process %d still running after SIGKILL", pid);
-                        pid_t pgid = getpgid(pid);
-                        if (pgid > 0 && pgid != getpgrp()) {
-                            log_info("Killing process group %d", pgid);
-                            killpg(pgid, SIGKILL);
-                        }
-                    }
-                }
-
-                if (still_running) {
-                    usleep(500000);
-                    reap_zombie_children();
-
-                    pid_t last_pids[64];
-                    int nlast = scan_proc_for_argv0_basename("go2rtc", last_pids, 64);
-                    for (int j = 0; j < nlast; j++) {
-                        if (is_go2rtc_process(last_pids[j]) && !is_zombie_process(last_pids[j])) {
-                            log_error("go2rtc process %d could not be killed", last_pids[j]);
-                            success = false;
-                        }
-                    }
-                }
+    if (remaining > 0) {
+        pid_t last_pids[64];
+        int nlast = scan_proc_for_argv0_basename("go2rtc", last_pids, 64);
+        for (int j = 0; j < nlast; j++) {
+            if (is_go2rtc_process(last_pids[j]) && !is_zombie_process(last_pids[j])) {
+                log_error("go2rtc process %d could not be killed", last_pids[j]);
+                success = false;
             }
         }
     }
@@ -1253,9 +1237,9 @@ bool go2rtc_process_start(int api_port) {
         char log_path[PATH_MAX]; // Use PATH_MAX to accommodate full filesystem paths
 
         // Extract directory from g_config->log_file
-        char log_dir[PATH_MAX] = {0};
         if (g_config.log_file[0] != '\0') {
-            strncpy(log_dir, g_config.log_file, sizeof(log_dir) - 1);
+            char log_dir[PATH_MAX];
+            safe_strcpy(log_dir, g_config.log_file, sizeof(log_dir), 0);
 
             // Find the last slash to get the directory
             char *last_slash = strrchr(log_dir, '/');
@@ -1273,6 +1257,28 @@ bool go2rtc_process_start(int api_port) {
             snprintf(log_path, sizeof(log_path), "%s/go2rtc.log", g_config_dir);
         }
 
+        // Resolve the binary path to a canonical absolute path to prevent
+        // path traversal or symlink attacks (CWE-426 / CWE-78).
+        char resolved_binary[PATH_MAX];
+        if (realpath(g_binary_path, resolved_binary) == NULL) {
+            fprintf(stderr, "Failed to resolve go2rtc binary path '%s': %s\n",
+                    g_binary_path, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
+        struct stat st;
+        if (stat(resolved_binary, &st) == 0) {
+            if (!S_ISREG(st.st_mode)) {
+                fprintf(stderr, "go2rtc path is not a file: %s\n", resolved_binary);
+                exit(EXIT_FAILURE);
+            }
+        } else {
+            // This really shouldn't happen except in a race condition or if something else
+            // really nasty is happening, but we'll cover the case anyway.
+            fprintf(stderr, "go2rtc path no longer exists? %s (%s)\n", resolved_binary, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
         // Log the path we're using for the log file
         fprintf(stderr, "Using go2rtc log file: %s\n", log_path);
 
@@ -1285,15 +1291,6 @@ bool go2rtc_process_start(int api_port) {
         dup2(log_fd, STDOUT_FILENO);
         dup2(log_fd, STDERR_FILENO);
         close(log_fd);
-
-        // Resolve the binary path to a canonical absolute path to prevent
-        // path traversal or symlink attacks (CWE-426 / CWE-78).
-        char resolved_binary[PATH_MAX];
-        if (realpath(g_binary_path, resolved_binary) == NULL) {
-            fprintf(stderr, "Failed to resolve go2rtc binary path '%s': %s\n",
-                    g_binary_path, strerror(errno));
-            exit(EXIT_FAILURE);
-        }
 
         // Execute go2rtc with explicit config path (using correct argument format).
         // Always use "go2rtc" as argv[0] (the process name visible in /proc/<pid>/cmdline
@@ -1315,6 +1312,7 @@ bool go2rtc_process_start(int api_port) {
         sleep(1);
 
         // Verify the process is still running
+        reap_zombie_children(pid);
         if (kill(pid, 0) != 0) {
             log_error("go2rtc process %d failed to start", pid);
             g_process_pid = -1;
@@ -1332,6 +1330,13 @@ bool go2rtc_process_start(int api_port) {
             CURLcode res;
             char url[256];
             long http_code = 0;
+
+            reap_zombie_children(pid);
+            if (kill(pid, 0) != 0) {
+                log_error("go2rtc process %d no longer running", pid);
+                g_process_pid = -1;
+                return false;
+            }
 
             // Initialize curl
             curl = curl_easy_init();

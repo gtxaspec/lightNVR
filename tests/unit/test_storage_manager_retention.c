@@ -14,10 +14,12 @@
 #include <unistd.h>
 
 #include "unity.h"
+#include "core/path_utils.h"
 #include "database/db_core.h"
 #include "database/db_recordings.h"
 #include "database/db_streams.h"
 #include "storage/storage_manager.h"
+#include "utils/strings.h"
 
 #define TEST_DB_PATH "/tmp/lightnvr_unit_storage_manager_retention.db"
 
@@ -59,7 +61,7 @@ static void create_mp4_dir(void) {
     TEST_ASSERT_TRUE(root_len + 5 <= sizeof(dir));
     memcpy(dir, g_storage_root, root_len);
     memcpy(dir + root_len, "/mp4", 5);
-    TEST_ASSERT_TRUE(mkdir(dir, 0755) == 0 || access(dir, F_OK) == 0);
+    TEST_ASSERT_EQUAL_INT(0, ensure_dir(dir));
 }
 
 static void create_file(const char *path, size_t size) {
@@ -72,9 +74,9 @@ static void create_file(const char *path, size_t size) {
 static stream_config_t make_stream(const char *name) {
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, name, sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://camera/stream", sizeof(s.url) - 1);
-    strncpy(s.codec, "h264", sizeof(s.codec) - 1);
+    safe_strcpy(s.name, name, sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://camera/stream", sizeof(s.url), 0);
+    safe_strcpy(s.codec, "h264", sizeof(s.codec), 0);
     s.enabled = true;
     s.streaming_enabled = true;
     s.record = true;
@@ -95,10 +97,10 @@ static void add_stream_with_quota(const char *name, int max_storage_mb) {
 static recording_metadata_t make_recording(const char *stream, const char *path, time_t start, uint64_t size_bytes) {
     recording_metadata_t m;
     memset(&m, 0, sizeof(m));
-    strncpy(m.stream_name, stream, sizeof(m.stream_name) - 1);
-    strncpy(m.file_path, path, sizeof(m.file_path) - 1);
-    strncpy(m.codec, "h264", sizeof(m.codec) - 1);
-    strncpy(m.trigger_type, "scheduled", sizeof(m.trigger_type) - 1);
+    safe_strcpy(m.stream_name, stream, sizeof(m.stream_name), 0);
+    safe_strcpy(m.file_path, path, sizeof(m.file_path), 0);
+    safe_strcpy(m.codec, "h264", sizeof(m.codec), 0);
+    safe_strcpy(m.trigger_type, "scheduled", sizeof(m.trigger_type), 0);
     m.start_time = start;
     m.end_time = start + 60;
     m.size_bytes = size_bytes;
@@ -180,7 +182,7 @@ void test_apply_retention_policy_preserves_metadata_when_file_delete_fails(void)
     create_mp4_dir();
     add_stream_with_quota("blocked_cam", 1);
     mp4_path(blocked_path, sizeof(blocked_path), "quota-blocked.mp4");
-    TEST_ASSERT_EQUAL_INT(0, mkdir(blocked_path, 0755));
+    TEST_ASSERT_EQUAL_INT(0, ensure_dir(blocked_path));
 
     rec = make_recording("blocked_cam", blocked_path, now - 300, 2 * 1024 * 1024);
     TEST_ASSERT_NOT_EQUAL(0, add_recording_metadata(&rec));
@@ -197,7 +199,8 @@ void test_apply_retention_policy_skips_orphan_cleanup_when_ratio_is_too_high(voi
     add_stream_with_quota("orphan_cam", 0);
 
     for (int i = 0; i < 10; i++) {
-        char path[PATH_MAX], name[32];
+        char path[PATH_MAX];
+        char name[32];
         recording_metadata_t rec;
         snprintf(name, sizeof(name), "high-ratio-%02d.mp4", i);
         mp4_path(path, sizeof(path), name);
@@ -212,12 +215,14 @@ void test_apply_retention_policy_skips_orphan_cleanup_when_ratio_is_too_high(voi
 
 void test_apply_retention_policy_cleans_low_ratio_orphans_when_storage_is_healthy(void) {
     time_t now = time(NULL);
-    char missing_path[PATH_MAX] = "", existing_path[PATH_MAX] = "";
+    char missing_path[PATH_MAX] = "";
+    char existing_path[PATH_MAX] = "";
     create_mp4_dir();
     add_stream_with_quota("healthy_cam", 0);
 
     for (int i = 0; i < 10; i++) {
-        char path[PATH_MAX], name[32];
+        char path[PATH_MAX];
+        char name[32];
         recording_metadata_t rec;
         snprintf(name, sizeof(name), "low-ratio-%02d.mp4", i);
         mp4_path(path, sizeof(path), name);
@@ -240,7 +245,8 @@ void test_apply_retention_policy_skips_orphans_when_mp4_storage_is_inaccessible(
     add_stream_with_quota("offline_cam", 0);
 
     for (int i = 0; i < 10; i++) {
-        char path[PATH_MAX], name[32];
+        char path[PATH_MAX];
+        char name[32];
         recording_metadata_t rec;
         snprintf(name, sizeof(name), "offline-%02d.mp4", i);
         mp4_path(path, sizeof(path), name);

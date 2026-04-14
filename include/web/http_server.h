@@ -18,6 +18,7 @@
  */
 typedef struct {
     int port;                       // Server port
+    const char *bind_ip;            // Server bind address
     const char *web_root;           // Web root directory
     bool auth_enabled;              // Authentication enabled
     char username[32];              // Authentication username
@@ -27,12 +28,12 @@ typedef struct {
     char allowed_methods[256];      // CORS allowed methods
     char allowed_headers[256];      // CORS allowed headers
     bool ssl_enabled;               // SSL/TLS enabled
-    char cert_path[256];            // SSL/TLS certificate path
-    char key_path[256];             // SSL/TLS key path
+    char cert_path[MAX_PATH_LENGTH]; // SSL/TLS certificate path
+    char key_path[MAX_PATH_LENGTH];  // SSL/TLS key path
     int max_connections;            // Maximum number of connections
     int connection_timeout;         // Connection timeout in seconds
     bool daemon_mode;               // Daemon mode
-    char pid_file[256];             // PID file path
+    char pid_file[MAX_PATH_LENGTH]; // PID file path
 } http_server_config_t;
 
 /**

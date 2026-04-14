@@ -20,6 +20,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
 #include "database/db_recordings.h"
 #include "database/db_detections.h"
 #include "database/db_auth.h"
@@ -29,23 +30,6 @@
 #define MAX_SELECTED_STREAM_FILTERS 32
 #define MAX_SELECTED_STREAM_NAME_LEN 64
 
-static void trim_filter_value(char *value) {
-    if (!value) return;
-
-    char *start = value;
-    while (*start && isspace((unsigned char)*start)) {
-        start++;
-    }
-    if (start != value) {
-        memmove(value, start, strlen(start) + 1);
-    }
-
-    size_t len = strlen(value);
-    while (len > 0 && isspace((unsigned char)value[len - 1])) {
-        value[--len] = '\0';
-    }
-}
-
 static int parse_selected_streams(const char *csv,
                                   char values[][MAX_SELECTED_STREAM_NAME_LEN],
                                   int max_values) {
@@ -54,17 +38,13 @@ static int parse_selected_streams(const char *csv,
     }
 
     char buffer[MAX_SELECTED_STREAM_FILTERS * MAX_SELECTED_STREAM_NAME_LEN];
-    strncpy(buffer, csv, sizeof(buffer) - 1);
-    buffer[sizeof(buffer) - 1] = '\0';
+    safe_strcpy(buffer, csv, sizeof(buffer), 0);
 
     int count = 0;
     char *saveptr = NULL;
     char *token = strtok_r(buffer, ",", &saveptr);
     while (token && count < max_values) {
-        trim_filter_value(token);
-        if (*token) {
-            strncpy(values[count], token, MAX_SELECTED_STREAM_NAME_LEN - 1);
-            values[count][MAX_SELECTED_STREAM_NAME_LEN - 1] = '\0';
+        if (copy_trimmed_value(values[count], MAX_SELECTED_STREAM_NAME_LEN, token, 0)) {
             count++;
         }
         token = strtok_r(NULL, ",", &saveptr);

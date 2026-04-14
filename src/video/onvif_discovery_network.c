@@ -1,5 +1,3 @@
-#include "video/onvif_discovery_network.h"
-#include "core/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +11,10 @@
 #include <errno.h>
 #include <net/if.h>
 #include <stdbool.h>
+
+#include "video/onvif_discovery_network.h"
+#include "core/logger.h"
+#include "utils/strings.h"
 
 // Define constants if not already defined
 #ifndef NI_MAXHOST
@@ -47,8 +49,7 @@ int parse_network(const char *network, uint32_t *base_addr, uint32_t *subnet_mas
     }
     
     // Make a copy of the network string
-    strncpy(network_copy, network, sizeof(network_copy) - 1);
-    network_copy[sizeof(network_copy) - 1] = '\0';
+    safe_strcpy(network_copy, network, sizeof(network_copy), 0);
     
     // Find the slash
     slash = strchr(network_copy, '/');

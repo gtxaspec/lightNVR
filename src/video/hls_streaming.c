@@ -14,6 +14,7 @@
 #include <stdatomic.h>
 
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "video/hls_streaming.h"
 #include "video/stream_state.h"
 #include "video/hls/hls_unified_thread.h"
@@ -157,8 +158,7 @@ void cleanup_hls_streaming_backend(void) {
         if (unified_contexts[i] != NULL) {
             char stream_name_copy[MAX_STREAM_NAME] = "unknown";
             if (unified_contexts[i]->stream_name[0] != '\0') {
-                strncpy(stream_name_copy, unified_contexts[i]->stream_name, MAX_STREAM_NAME - 1);
-                stream_name_copy[MAX_STREAM_NAME - 1] = '\0';
+                safe_strcpy(stream_name_copy, unified_contexts[i]->stream_name, MAX_STREAM_NAME, 0);
             }
 
             // Check if thread has actually stopped

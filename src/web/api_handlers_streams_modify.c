@@ -15,6 +15,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
 #include "video/stream_state.h"
@@ -110,18 +111,15 @@ static void normalize_stream_url_credentials(stream_config_t *config) {
                                 extracted_username, sizeof(extracted_username),
                                 extracted_password, sizeof(extracted_password)) == 0) {
         if (config->onvif_username[0] == '\0' && extracted_username[0] != '\0') {
-            strncpy(config->onvif_username, extracted_username, sizeof(config->onvif_username) - 1);
-            config->onvif_username[sizeof(config->onvif_username) - 1] = '\0';
+            safe_strcpy(config->onvif_username, extracted_username, sizeof(config->onvif_username), 0);
         }
         if (config->onvif_password[0] == '\0' && extracted_password[0] != '\0') {
-            strncpy(config->onvif_password, extracted_password, sizeof(config->onvif_password) - 1);
-            config->onvif_password[sizeof(config->onvif_password) - 1] = '\0';
+            safe_strcpy(config->onvif_password, extracted_password, sizeof(config->onvif_password), 0);
         }
     }
 
     if (url_strip_credentials(config->url, stripped_url, sizeof(stripped_url)) == 0) {
-        strncpy(config->url, stripped_url, sizeof(config->url) - 1);
-        config->url[sizeof(config->url) - 1] = '\0';
+        safe_strcpy(config->url, stripped_url, sizeof(config->url), 0);
     }
 }
 
@@ -136,8 +134,7 @@ static int build_onvif_test_url(const stream_config_t *config, char *out_url, si
 
 static void redact_url_for_log(const char *url, char *out_url, size_t out_size) {
     if (url_redact_for_logging(url, out_url, out_size) != 0) {
-        strncpy(out_url, "[invalid-url]", out_size - 1);
-        out_url[out_size - 1] = '\0';
+        safe_strcpy(out_url, "[invalid-url]", out_size, 0);
     }
 }
 
@@ -436,13 +433,12 @@ void handle_post_stream(const http_request_t *req, http_response_t *res) {
     }
 
     // Copy trimmed name (skip leading whitespace, then strip trailing whitespace)
-    strncpy(config.name, name_str, sizeof(config.name) - 1);
-    config.name[sizeof(config.name) - 1] = '\0';
+    safe_strcpy(config.name, name_str, sizeof(config.name), 0);
     size_t name_len = strlen(config.name);
     while (name_len > 0 && (config.name[name_len - 1] == ' ' || config.name[name_len - 1] == '\t')) {
         config.name[--name_len] = '\0';
     }
-    strncpy(config.url, url->valuestring, sizeof(config.url) - 1);
+    safe_strcpy(config.url, url->valuestring, sizeof(config.url), 0);
 
     // Optional fields with defaults
     config.enabled = true;
@@ -499,7 +495,7 @@ void handle_post_stream(const http_request_t *req, http_response_t *res) {
 
     cJSON *detection_model = cJSON_GetObjectItem(stream_json, "detection_model");
     if (detection_model && cJSON_IsString(detection_model)) {
-        strncpy(config.detection_model, detection_model->valuestring, sizeof(config.detection_model) - 1);
+        safe_strcpy(config.detection_model, detection_model->valuestring, sizeof(config.detection_model), 0);
     }
 
     cJSON *detection_threshold = cJSON_GetObjectItem(stream_json, "detection_threshold");
@@ -525,14 +521,12 @@ void handle_post_stream(const http_request_t *req, http_response_t *res) {
 
     cJSON *detection_object_filter = cJSON_GetObjectItem(stream_json, "detection_object_filter");
     if (detection_object_filter && cJSON_IsString(detection_object_filter)) {
-        strncpy(config.detection_object_filter, detection_object_filter->valuestring, sizeof(config.detection_object_filter) - 1);
-        config.detection_object_filter[sizeof(config.detection_object_filter) - 1] = '\0';
+        safe_strcpy(config.detection_object_filter, detection_object_filter->valuestring, sizeof(config.detection_object_filter), 0);
     }
 
     cJSON *detection_object_filter_list = cJSON_GetObjectItem(stream_json, "detection_object_filter_list");
     if (detection_object_filter_list && cJSON_IsString(detection_object_filter_list)) {
-        strncpy(config.detection_object_filter_list, detection_object_filter_list->valuestring, sizeof(config.detection_object_filter_list) - 1);
-        config.detection_object_filter_list[sizeof(config.detection_object_filter_list) - 1] = '\0';
+        safe_strcpy(config.detection_object_filter_list, detection_object_filter_list->valuestring, sizeof(config.detection_object_filter_list), 0);
     }
 
     cJSON *protocol = cJSON_GetObjectItem(stream_json, "protocol");
@@ -643,16 +637,14 @@ void handle_post_stream(const http_request_t *req, http_response_t *res) {
     // Parse tags setting (comma-separated list, e.g. "outdoor,critical,entrance")
     cJSON *tags_post = cJSON_GetObjectItem(stream_json, "tags");
     if (tags_post && cJSON_IsString(tags_post)) {
-        strncpy(config.tags, tags_post->valuestring, sizeof(config.tags) - 1);
-        config.tags[sizeof(config.tags) - 1] = '\0';
+        safe_strcpy(config.tags, tags_post->valuestring, sizeof(config.tags), 0);
     } else {
         config.tags[0] = '\0';
     }
 
     cJSON *admin_url_post = cJSON_GetObjectItem(stream_json, "admin_url");
     if (admin_url_post && cJSON_IsString(admin_url_post)) {
-        strncpy(config.admin_url, admin_url_post->valuestring, sizeof(config.admin_url) - 1);
-        config.admin_url[sizeof(config.admin_url) - 1] = '\0';
+        safe_strcpy(config.admin_url, admin_url_post->valuestring, sizeof(config.admin_url), 0);
     } else {
         config.admin_url[0] = '\0';
     }
@@ -660,9 +652,8 @@ void handle_post_stream(const http_request_t *req, http_response_t *res) {
     // Parse cross-stream motion trigger source
     cJSON *motion_trigger_source_post = cJSON_GetObjectItem(stream_json, "motion_trigger_source");
     if (motion_trigger_source_post && cJSON_IsString(motion_trigger_source_post)) {
-        strncpy(config.motion_trigger_source, motion_trigger_source_post->valuestring,
-                sizeof(config.motion_trigger_source) - 1);
-        config.motion_trigger_source[sizeof(config.motion_trigger_source) - 1] = '\0';
+        safe_strcpy(config.motion_trigger_source, motion_trigger_source_post->valuestring,
+                sizeof(config.motion_trigger_source), 0);
     } else {
         config.motion_trigger_source[0] = '\0';
     }
@@ -696,13 +687,11 @@ void handle_post_stream(const http_request_t *req, http_response_t *res) {
         cJSON *onvif_password = cJSON_GetObjectItem(stream_json, "onvif_password");
 
         if (onvif_username && cJSON_IsString(onvif_username)) {
-            strncpy(config.onvif_username, onvif_username->valuestring, sizeof(config.onvif_username) - 1);
-            config.onvif_username[sizeof(config.onvif_username) - 1] = '\0';
+            safe_strcpy(config.onvif_username, onvif_username->valuestring, sizeof(config.onvif_username), 0);
         }
 
         if (onvif_password && cJSON_IsString(onvif_password)) {
-            strncpy(config.onvif_password, onvif_password->valuestring, sizeof(config.onvif_password) - 1);
-            config.onvif_password[sizeof(config.onvif_password) - 1] = '\0';
+            safe_strcpy(config.onvif_password, onvif_password->valuestring, sizeof(config.onvif_password), 0);
         }
 
         normalize_stream_url_credentials(&config);
@@ -710,8 +699,7 @@ void handle_post_stream(const http_request_t *req, http_response_t *res) {
         // Build ONVIF device URL, using onvif_port if specified
         char onvif_device_url[MAX_URL_LENGTH];
         if (build_onvif_test_url(&config, onvif_device_url, sizeof(onvif_device_url)) != 0) {
-            strncpy(onvif_device_url, config.url, sizeof(onvif_device_url) - 1);
-            onvif_device_url[sizeof(onvif_device_url) - 1] = '\0';
+            safe_strcpy(onvif_device_url, config.url, sizeof(onvif_device_url), 0);
         }
 
         // Test ONVIF connection
@@ -899,8 +887,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
 
     // Save original values for comparison
     char original_url[MAX_URL_LENGTH];
-    strncpy(original_url, config.url, MAX_URL_LENGTH - 1);
-    original_url[MAX_URL_LENGTH - 1] = '\0';
+    safe_strcpy(original_url, config.url, MAX_URL_LENGTH, 0);
 
     stream_protocol_t original_protocol = config.protocol;
     bool original_record_audio = config.record_audio;
@@ -908,7 +895,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     cJSON *url = cJSON_GetObjectItem(stream_json, "url");
     if (url && cJSON_IsString(url)) {
         if (strcmp(config.url, url->valuestring) != 0) {
-            strncpy(config.url, url->valuestring, sizeof(config.url) - 1);
+            safe_strcpy(config.url, url->valuestring, sizeof(config.url), 0);
             config_changed = true;
             requires_restart = true;  // URL changes always require restart
             char safe_original_url[MAX_URL_LENGTH];
@@ -978,10 +965,10 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     cJSON *detection_model_json = cJSON_GetObjectItem(stream_json, "detection_model");
     bool has_detection_model = false;
     if (detection_model_json && cJSON_IsString(detection_model_json)) {
-        char detection_model_value[256] = {0};
-        strncpy(detection_model_value, detection_model_json->valuestring, sizeof(detection_model_value) - 1);
+        char detection_model_value[256];
+        safe_strcpy(detection_model_value, detection_model_json->valuestring, sizeof(detection_model_value), 0);
         has_detection_model = true;
-        strncpy(config.detection_model, detection_model_value, sizeof(config.detection_model) - 1);
+        safe_strcpy(config.detection_model, detection_model_value, sizeof(config.detection_model), 0);
         config_changed = true;
         non_dynamic_config_changed = true;
     }
@@ -1021,15 +1008,13 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
 
     cJSON *detection_object_filter = cJSON_GetObjectItem(stream_json, "detection_object_filter");
     if (detection_object_filter && cJSON_IsString(detection_object_filter)) {
-        strncpy(config.detection_object_filter, detection_object_filter->valuestring, sizeof(config.detection_object_filter) - 1);
-        config.detection_object_filter[sizeof(config.detection_object_filter) - 1] = '\0';
+        safe_strcpy(config.detection_object_filter, detection_object_filter->valuestring, sizeof(config.detection_object_filter), 0);
         config_changed = true;
     }
 
     cJSON *detection_object_filter_list = cJSON_GetObjectItem(stream_json, "detection_object_filter_list");
     if (detection_object_filter_list && cJSON_IsString(detection_object_filter_list)) {
-        strncpy(config.detection_object_filter_list, detection_object_filter_list->valuestring, sizeof(config.detection_object_filter_list) - 1);
-        config.detection_object_filter_list[sizeof(config.detection_object_filter_list) - 1] = '\0';
+        safe_strcpy(config.detection_object_filter_list, detection_object_filter_list->valuestring, sizeof(config.detection_object_filter_list), 0);
         config_changed = true;
     }
 
@@ -1237,8 +1222,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     cJSON *tags_put = cJSON_GetObjectItem(stream_json, "tags");
     if (tags_put && cJSON_IsString(tags_put)) {
         if (strncmp(config.tags, tags_put->valuestring, sizeof(config.tags) - 1) != 0) {
-            strncpy(config.tags, tags_put->valuestring, sizeof(config.tags) - 1);
-            config.tags[sizeof(config.tags) - 1] = '\0';
+            safe_strcpy(config.tags, tags_put->valuestring, sizeof(config.tags), 0);
             config_changed = true;
             log_info("Tags changed to '%s' for stream %s", config.tags, config.name);
         }
@@ -1252,8 +1236,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     cJSON *admin_url_put = cJSON_GetObjectItem(stream_json, "admin_url");
     if (admin_url_put && cJSON_IsString(admin_url_put)) {
         if (strncmp(config.admin_url, admin_url_put->valuestring, sizeof(config.admin_url) - 1) != 0) {
-            strncpy(config.admin_url, admin_url_put->valuestring, sizeof(config.admin_url) - 1);
-            config.admin_url[sizeof(config.admin_url) - 1] = '\0';
+            safe_strcpy(config.admin_url, admin_url_put->valuestring, sizeof(config.admin_url), 0);
             config_changed = true;
             log_info("Admin URL changed for stream %s", config.name);
         }
@@ -1269,9 +1252,8 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     if (motion_trigger_source_put && cJSON_IsString(motion_trigger_source_put)) {
         if (strncmp(config.motion_trigger_source, motion_trigger_source_put->valuestring,
                     sizeof(config.motion_trigger_source) - 1) != 0) {
-            strncpy(config.motion_trigger_source, motion_trigger_source_put->valuestring,
-                    sizeof(config.motion_trigger_source) - 1);
-            config.motion_trigger_source[sizeof(config.motion_trigger_source) - 1] = '\0';
+            safe_strcpy(config.motion_trigger_source, motion_trigger_source_put->valuestring,
+                    sizeof(config.motion_trigger_source), 0);
             config_changed = true;
             log_info("Motion trigger source changed to '%s' for stream %s",
                      config.motion_trigger_source, config.name);
@@ -1321,10 +1303,8 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     // Save original credentials before any update so we can detect changes
     char original_onvif_username[sizeof(config.onvif_username)];
     char original_onvif_password[sizeof(config.onvif_password)];
-    strncpy(original_onvif_username, config.onvif_username, sizeof(original_onvif_username) - 1);
-    original_onvif_username[sizeof(original_onvif_username) - 1] = '\0';
-    strncpy(original_onvif_password, config.onvif_password, sizeof(original_onvif_password) - 1);
-    original_onvif_password[sizeof(original_onvif_password) - 1] = '\0';
+    safe_strcpy(original_onvif_username, config.onvif_username, sizeof(original_onvif_username), 0);
+    safe_strcpy(original_onvif_password, config.onvif_password, sizeof(original_onvif_password), 0);
 
     if (config.is_onvif) {
         log_info("Testing ONVIF capabilities for stream %s", config.name);
@@ -1335,13 +1315,11 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
         cJSON *onvif_password = cJSON_GetObjectItem(stream_json, "onvif_password");
 
         if (onvif_username && cJSON_IsString(onvif_username)) {
-            strncpy(config.onvif_username, onvif_username->valuestring, sizeof(config.onvif_username) - 1);
-            config.onvif_username[sizeof(config.onvif_username) - 1] = '\0';
+            safe_strcpy(config.onvif_username, onvif_username->valuestring, sizeof(config.onvif_username), 0);
         }
 
         if (onvif_password && cJSON_IsString(onvif_password)) {
-            strncpy(config.onvif_password, onvif_password->valuestring, sizeof(config.onvif_password) - 1);
-            config.onvif_password[sizeof(config.onvif_password) - 1] = '\0';
+            safe_strcpy(config.onvif_password, onvif_password->valuestring, sizeof(config.onvif_password), 0);
         }
 
         normalize_stream_url_credentials(&config);
@@ -1359,8 +1337,7 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
         // Build ONVIF device URL, using onvif_port if specified
         char onvif_device_url[MAX_URL_LENGTH];
         if (build_onvif_test_url(&config, onvif_device_url, sizeof(onvif_device_url)) != 0) {
-            strncpy(onvif_device_url, config.url, sizeof(onvif_device_url) - 1);
-            onvif_device_url[sizeof(onvif_device_url) - 1] = '\0';
+            safe_strcpy(onvif_device_url, config.url, sizeof(onvif_device_url), 0);
         }
 
         // Test ONVIF connection
@@ -1519,8 +1496,8 @@ void handle_put_stream(const http_request_t *req, http_response_t *res) {
     // Populate task with all necessary data
     task->stream = stream;
     memcpy(&task->config, &config, sizeof(stream_config_t));
-    strncpy(task->stream_id, stream_id, MAX_STREAM_NAME - 1);
-    strncpy(task->original_url, original_url, MAX_URL_LENGTH - 1);
+    safe_strcpy(task->stream_id, stream_id, MAX_STREAM_NAME, 0);
+    safe_strcpy(task->original_url, original_url, MAX_URL_LENGTH, 0);
     task->original_protocol = original_protocol;
     task->original_record_audio = original_record_audio;
     task->config_changed = config_changed;
@@ -1724,7 +1701,7 @@ void handle_delete_stream(const http_request_t *req, http_response_t *res) {
     }
 
     task->stream = stream;
-    strncpy(task->stream_id, stream_id, sizeof(task->stream_id) - 1);
+    safe_strcpy(task->stream_id, stream_id, sizeof(task->stream_id), 0);
     task->permanent_delete = permanent_delete;
 
     // Send 202 Accepted response immediately so we don't block the event loop
@@ -1897,7 +1874,7 @@ void handle_post_stream_refresh(const http_request_t *req, http_response_t *res)
         http_response_set_json_error(res, 500, "Internal server error");
         return;
     }
-    strncpy(task->stream_name, stream_name, MAX_STREAM_NAME - 1);
+    safe_strcpy(task->stream_name, stream_name, MAX_STREAM_NAME, 0);
 
     // Send immediate 202 Accepted response
     cJSON *response = cJSON_CreateObject();

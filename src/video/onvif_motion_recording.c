@@ -16,10 +16,12 @@
 #include "video/onvif_motion_recording.h"
 #include "video/streams.h"
 #include "video/stream_manager.h"
+#include "video/unified_detection_thread.h"
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
 #include "database/database_manager.h"
 #include "database/db_recordings.h"
 #include "database/db_streams.h"
@@ -209,8 +211,7 @@ static motion_recording_context_t* create_recording_context(const char *stream_n
     for (int i = 0; i < g_config.max_streams; i++) {
         if (!recording_contexts[i].active) {
             memset(&recording_contexts[i], 0, sizeof(motion_recording_context_t));
-            strncpy(recording_contexts[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
-            recording_contexts[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(recording_contexts[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
             recording_contexts[i].state = RECORDING_STATE_IDLE;
             recording_contexts[i].active = true;
             
@@ -275,17 +276,10 @@ static int generate_recording_path(const char *stream_name, char *path, size_t p
              config->storage_path, sanitized_name, year, month, day);
 
     // Create directories if they don't exist
-    char temp_path[MAX_PATH_LENGTH];
-    snprintf(temp_path, sizeof(temp_path), "%s/%s", config->storage_path, sanitized_name);
-    mkdir(temp_path, 0755);
-
-    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s", config->storage_path, sanitized_name, year);
-    mkdir(temp_path, 0755);
-
-    snprintf(temp_path, sizeof(temp_path), "%s/%s/%s/%s", config->storage_path, sanitized_name, year, month);
-    mkdir(temp_path, 0755);
-
-    mkdir(dir_path, 0755);
+    if (mkdir_recursive(dir_path)) {
+        log_error("Could not create recording directory: %s", dir_path);
+        return -1;
+    }
 
     // Generate full file path
     snprintf(path, path_size, "%s/%s_%s_motion.mp4", dir_path, sanitized_name, timestamp);
@@ -518,7 +512,9 @@ static void* event_processor_thread_func(void *arg) {
         // Get or create recording context
         motion_recording_context_t *ctx = get_recording_context(event.stream_name);
         if (!ctx) {
-            log_warn("No recording context for stream: %s, skipping event", event.stream_name);
+            // No context means motion recording is disabled for this stream (e.g. detection-only mode).
+            // Path B (unified_detection_notify_motion) handles recording in that case.
+            log_debug("No motion recording context for stream: %s (detection-only mode?), skipping ONVIF queue", event.stream_name);
             continue;
         }
 
@@ -825,12 +821,11 @@ int process_motion_event(const char *stream_name, bool motion_detected, time_t t
     // Create motion event
     motion_event_t event;
     memset(&event, 0, sizeof(motion_event_t));
-    strncpy(event.stream_name, stream_name, MAX_STREAM_NAME - 1);
-    event.stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(event.stream_name, stream_name, MAX_STREAM_NAME, 0);
     event.timestamp = timestamp;
     event.active = motion_detected;
     event.confidence = 1.0f;
-    strncpy(event.event_type, "motion", sizeof(event.event_type) - 1);
+    safe_strcpy(event.event_type, "motion", sizeof(event.event_type), 0);
 
     // Push to event queue
     if (push_event(&event) != 0) {
@@ -844,6 +839,14 @@ int process_motion_event(const char *stream_name, bool motion_detected, time_t t
     // have their motion_trigger_source set to the current stream's name.
     // This enables dual-lens cameras (e.g. TP-Link C545D) where the fixed
     // wide-angle lens provides ONVIF events and the PTZ lens does not.
+    //
+    // Two propagation paths exist:
+    //  A) ONVIF-managed slave  → push a motion_event_t onto the ONVIF event queue
+    //  B) UDT-managed slave    → call unified_detection_notify_motion() so the UDT
+    //                            thread picks it up on the next packet boundary
+    //
+    // Both paths are attempted for every matching slave stream; whichever
+    // system is not managing that stream will silently ignore the call.
     int max_streams = g_config.max_streams > 0 ? g_config.max_streams : MAX_STREAMS;
     stream_config_t *all_streams = calloc(max_streams, sizeof(stream_config_t));
     if (all_streams) {
@@ -851,23 +854,25 @@ int process_motion_event(const char *stream_name, bool motion_detected, time_t t
         for (int i = 0; i < count; i++) {
             if (all_streams[i].motion_trigger_source[0] != '\0' &&
                 strcmp(all_streams[i].motion_trigger_source, stream_name) == 0) {
-                // This stream is slaved to the current stream's motion events
+                // Path A: ONVIF event queue (for ONVIF-managed slave streams)
                 motion_event_t linked_event;
                 memset(&linked_event, 0, sizeof(motion_event_t));
-                strncpy(linked_event.stream_name, all_streams[i].name, MAX_STREAM_NAME - 1);
-                linked_event.stream_name[MAX_STREAM_NAME - 1] = '\0';
+                safe_strcpy(linked_event.stream_name, all_streams[i].name, MAX_STREAM_NAME, 0);
                 linked_event.timestamp = timestamp;
                 linked_event.active = motion_detected;
                 linked_event.confidence = 1.0f;
-                strncpy(linked_event.event_type, "motion", sizeof(linked_event.event_type) - 1);
+                safe_strcpy(linked_event.event_type, "motion", sizeof(linked_event.event_type), 0);
 
                 if (push_event(&linked_event) != 0) {
                     log_error("Failed to push linked motion event to stream: %s (triggered by: %s)",
                               all_streams[i].name, stream_name);
                 } else {
-                    log_info("Propagated motion event (%s) from '%s' to linked stream '%s'",
+                    log_info("Propagated motion event (%s) from '%s' to linked ONVIF stream '%s'",
                              motion_detected ? "start" : "end", stream_name, all_streams[i].name);
                 }
+
+                // Path B: UDT external trigger (for UDT-managed slave streams, e.g. PTZ lens)
+                unified_detection_notify_motion(all_streams[i].name, motion_detected);
             }
         }
         free(all_streams);
@@ -985,8 +990,7 @@ int get_current_motion_recording_path(const char *stream_name, char *path, size_
 
     pthread_mutex_lock(&ctx->mutex);
     if (ctx->current_file_path[0] != '\0') {
-        strncpy(path, ctx->current_file_path, path_size - 1);
-        path[path_size - 1] = '\0';
+        safe_strcpy(path, ctx->current_file_path, path_size, 0);
         pthread_mutex_unlock(&ctx->mutex);
         return 0;
     }

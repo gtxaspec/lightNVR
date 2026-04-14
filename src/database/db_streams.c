@@ -15,6 +15,7 @@
 #include "database/db_schema_cache.h"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 
 /**
  * Serialize recording_schedule uint8_t[168] to comma-separated text string.
@@ -47,8 +48,7 @@ static void deserialize_recording_schedule(const char *text, uint8_t *schedule) 
         return;
     }
     char buf[RECORDING_SCHEDULE_TEXT_SIZE];
-    strncpy(buf, text, sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
+    safe_strcpy(buf, text, sizeof(buf), 0);
 
     int idx = 0;
     char *saveptr = NULL;
@@ -578,7 +578,7 @@ int update_stream_video_params(const char *stream_name, int width, int height, i
             old_fps    = sqlite3_column_int(stmt, 2);
             const char *c = (const char *)sqlite3_column_text(stmt, 3);
             if (c) {
-                strncpy(old_codec, c, sizeof(old_codec) - 1);
+                safe_strcpy(old_codec, c, sizeof(old_codec), 0);
             }
         }
         sqlite3_finalize(stmt);
@@ -808,14 +808,12 @@ int get_stream_config_by_name(const char *name, stream_config_t *stream) {
         // Basic stream settings
         const char *stream_name = (const char *)sqlite3_column_text(stmt, COL_NAME);
         if (stream_name) {
-            strncpy(stream->name, stream_name, MAX_STREAM_NAME - 1);
-            stream->name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(stream->name, stream_name, MAX_STREAM_NAME, 0);
         }
 
         const char *url = (const char *)sqlite3_column_text(stmt, COL_URL);
         if (url) {
-            strncpy(stream->url, url, MAX_URL_LENGTH - 1);
-            stream->url[MAX_URL_LENGTH - 1] = '\0';
+            safe_strcpy(stream->url, url, MAX_URL_LENGTH, 0);
         }
 
         stream->enabled = sqlite3_column_int(stmt, COL_ENABLED) != 0;
@@ -826,8 +824,7 @@ int get_stream_config_by_name(const char *name, stream_config_t *stream) {
 
         const char *codec = (const char *)sqlite3_column_text(stmt, COL_CODEC);
         if (codec) {
-            strncpy(stream->codec, codec, sizeof(stream->codec) - 1);
-            stream->codec[sizeof(stream->codec) - 1] = '\0';
+            safe_strcpy(stream->codec, codec, sizeof(stream->codec), 0);
         }
 
         stream->priority = sqlite3_column_int(stmt, COL_PRIORITY);
@@ -839,8 +836,7 @@ int get_stream_config_by_name(const char *name, stream_config_t *stream) {
 
         const char *detection_model = (const char *)sqlite3_column_text(stmt, COL_DETECTION_MODEL);
         if (detection_model) {
-            strncpy(stream->detection_model, detection_model, MAX_PATH_LENGTH - 1);
-            stream->detection_model[MAX_PATH_LENGTH - 1] = '\0';
+            safe_strcpy(stream->detection_model, detection_model, MAX_PATH_LENGTH, 0);
         }
 
         stream->detection_threshold = (sqlite3_column_type(stmt, COL_DETECTION_THRESHOLD) != SQLITE_NULL)
@@ -854,23 +850,20 @@ int get_stream_config_by_name(const char *name, stream_config_t *stream) {
 
         const char *detection_api_url = (const char *)sqlite3_column_text(stmt, COL_DETECTION_API_URL);
         if (detection_api_url) {
-            strncpy(stream->detection_api_url, detection_api_url, MAX_URL_LENGTH - 1);
-            stream->detection_api_url[MAX_URL_LENGTH - 1] = '\0';
+            safe_strcpy(stream->detection_api_url, detection_api_url, MAX_URL_LENGTH, 0);
         }
 
         // Detection object filter settings
         const char *detection_object_filter = (const char *)sqlite3_column_text(stmt, COL_DETECTION_OBJECT_FILTER);
         if (detection_object_filter) {
-            strncpy(stream->detection_object_filter, detection_object_filter, sizeof(stream->detection_object_filter) - 1);
-            stream->detection_object_filter[sizeof(stream->detection_object_filter) - 1] = '\0';
+            safe_strcpy(stream->detection_object_filter, detection_object_filter, sizeof(stream->detection_object_filter), 0);
         } else {
-            strncpy(stream->detection_object_filter, "none", sizeof(stream->detection_object_filter) - 1);
+            safe_strcpy(stream->detection_object_filter, "none", sizeof(stream->detection_object_filter), 0);
         }
 
         const char *detection_object_filter_list = (const char *)sqlite3_column_text(stmt, COL_DETECTION_OBJECT_FILTER_LIST);
         if (detection_object_filter_list) {
-            strncpy(stream->detection_object_filter_list, detection_object_filter_list, sizeof(stream->detection_object_filter_list) - 1);
-            stream->detection_object_filter_list[sizeof(stream->detection_object_filter_list) - 1] = '\0';
+            safe_strcpy(stream->detection_object_filter_list, detection_object_filter_list, sizeof(stream->detection_object_filter_list), 0);
         }
 
         // Protocol and ONVIF
@@ -911,20 +904,17 @@ int get_stream_config_by_name(const char *name, stream_config_t *stream) {
         // ONVIF credentials
         const char *onvif_username = (const char *)sqlite3_column_text(stmt, COL_ONVIF_USERNAME);
         if (onvif_username) {
-            strncpy(stream->onvif_username, onvif_username, sizeof(stream->onvif_username) - 1);
-            stream->onvif_username[sizeof(stream->onvif_username) - 1] = '\0';
+            safe_strcpy(stream->onvif_username, onvif_username, sizeof(stream->onvif_username), 0);
         }
 
         const char *onvif_password = (const char *)sqlite3_column_text(stmt, COL_ONVIF_PASSWORD);
         if (onvif_password) {
-            strncpy(stream->onvif_password, onvif_password, sizeof(stream->onvif_password) - 1);
-            stream->onvif_password[sizeof(stream->onvif_password) - 1] = '\0';
+            safe_strcpy(stream->onvif_password, onvif_password, sizeof(stream->onvif_password), 0);
         }
 
         const char *onvif_profile = (const char *)sqlite3_column_text(stmt, COL_ONVIF_PROFILE);
         if (onvif_profile) {
-            strncpy(stream->onvif_profile, onvif_profile, sizeof(stream->onvif_profile) - 1);
-            stream->onvif_profile[sizeof(stream->onvif_profile) - 1] = '\0';
+            safe_strcpy(stream->onvif_profile, onvif_profile, sizeof(stream->onvif_profile), 0);
         }
 
         stream->onvif_port = (sqlite3_column_type(stmt, COL_ONVIF_PORT) != SQLITE_NULL)
@@ -938,16 +928,14 @@ int get_stream_config_by_name(const char *name, stream_config_t *stream) {
         // Tags
         const char *tags_val = (const char *)sqlite3_column_text(stmt, COL_TAGS);
         if (tags_val) {
-            strncpy(stream->tags, tags_val, sizeof(stream->tags) - 1);
-            stream->tags[sizeof(stream->tags) - 1] = '\0';
+            safe_strcpy(stream->tags, tags_val, sizeof(stream->tags), 0);
         } else {
             stream->tags[0] = '\0';
         }
 
         const char *admin_url = (const char *)sqlite3_column_text(stmt, COL_ADMIN_URL);
         if (admin_url) {
-            strncpy(stream->admin_url, admin_url, sizeof(stream->admin_url) - 1);
-            stream->admin_url[sizeof(stream->admin_url) - 1] = '\0';
+            safe_strcpy(stream->admin_url, admin_url, sizeof(stream->admin_url), 0);
         } else {
             stream->admin_url[0] = '\0';
         }
@@ -958,8 +946,7 @@ int get_stream_config_by_name(const char *name, stream_config_t *stream) {
         // Cross-stream motion trigger source
         const char *motion_trigger_source = (const char *)sqlite3_column_text(stmt, COL_MOTION_TRIGGER_SOURCE);
         if (motion_trigger_source) {
-            strncpy(stream->motion_trigger_source, motion_trigger_source, sizeof(stream->motion_trigger_source) - 1);
-            stream->motion_trigger_source[sizeof(stream->motion_trigger_source) - 1] = '\0';
+            safe_strcpy(stream->motion_trigger_source, motion_trigger_source, sizeof(stream->motion_trigger_source), 0);
         } else {
             stream->motion_trigger_source[0] = '\0';
         }
@@ -1048,14 +1035,12 @@ int get_all_stream_configs(stream_config_t *streams, int max_count) {
         // Basic settings
         const char *name = (const char *)sqlite3_column_text(stmt, COL_NAME);
         if (name) {
-            strncpy(s->name, name, MAX_STREAM_NAME - 1);
-            s->name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(s->name, name, MAX_STREAM_NAME, 0);
         }
 
         const char *url = (const char *)sqlite3_column_text(stmt, COL_URL);
         if (url) {
-            strncpy(s->url, url, MAX_URL_LENGTH - 1);
-            s->url[MAX_URL_LENGTH - 1] = '\0';
+            safe_strcpy(s->url, url, MAX_URL_LENGTH, 0);
         }
 
         s->enabled = sqlite3_column_int(stmt, COL_ENABLED) != 0;
@@ -1066,8 +1051,7 @@ int get_all_stream_configs(stream_config_t *streams, int max_count) {
 
         const char *codec = (const char *)sqlite3_column_text(stmt, COL_CODEC);
         if (codec) {
-            strncpy(s->codec, codec, sizeof(s->codec) - 1);
-            s->codec[sizeof(s->codec) - 1] = '\0';
+            safe_strcpy(s->codec, codec, sizeof(s->codec), 0);
         }
 
         s->priority = sqlite3_column_int(stmt, COL_PRIORITY);
@@ -1079,8 +1063,7 @@ int get_all_stream_configs(stream_config_t *streams, int max_count) {
 
         const char *detection_model = (const char *)sqlite3_column_text(stmt, COL_DETECTION_MODEL);
         if (detection_model) {
-            strncpy(s->detection_model, detection_model, MAX_PATH_LENGTH - 1);
-            s->detection_model[MAX_PATH_LENGTH - 1] = '\0';
+            safe_strcpy(s->detection_model, detection_model, MAX_PATH_LENGTH, 0);
         }
 
         s->detection_threshold = (sqlite3_column_type(stmt, COL_DETECTION_THRESHOLD) != SQLITE_NULL)
@@ -1094,23 +1077,20 @@ int get_all_stream_configs(stream_config_t *streams, int max_count) {
 
         const char *detection_api_url = (const char *)sqlite3_column_text(stmt, COL_DETECTION_API_URL);
         if (detection_api_url) {
-            strncpy(s->detection_api_url, detection_api_url, MAX_URL_LENGTH - 1);
-            s->detection_api_url[MAX_URL_LENGTH - 1] = '\0';
+            safe_strcpy(s->detection_api_url, detection_api_url, MAX_URL_LENGTH, 0);
         }
 
         // Detection object filter settings
         const char *detection_object_filter = (const char *)sqlite3_column_text(stmt, COL_DETECTION_OBJECT_FILTER);
         if (detection_object_filter) {
-            strncpy(s->detection_object_filter, detection_object_filter, sizeof(s->detection_object_filter) - 1);
-            s->detection_object_filter[sizeof(s->detection_object_filter) - 1] = '\0';
+            safe_strcpy(s->detection_object_filter, detection_object_filter, sizeof(s->detection_object_filter), 0);
         } else {
-            strncpy(s->detection_object_filter, "none", sizeof(s->detection_object_filter) - 1);
+            safe_strcpy(s->detection_object_filter, "none", sizeof(s->detection_object_filter), 0);
         }
 
         const char *detection_object_filter_list = (const char *)sqlite3_column_text(stmt, COL_DETECTION_OBJECT_FILTER_LIST);
         if (detection_object_filter_list) {
-            strncpy(s->detection_object_filter_list, detection_object_filter_list, sizeof(s->detection_object_filter_list) - 1);
-            s->detection_object_filter_list[sizeof(s->detection_object_filter_list) - 1] = '\0';
+            safe_strcpy(s->detection_object_filter_list, detection_object_filter_list, sizeof(s->detection_object_filter_list), 0);
         }
 
         // Protocol and ONVIF
@@ -1151,20 +1131,17 @@ int get_all_stream_configs(stream_config_t *streams, int max_count) {
         // ONVIF credentials and settings
         const char *onvif_username = (const char *)sqlite3_column_text(stmt, COL_ONVIF_USERNAME);
         if (onvif_username) {
-            strncpy(s->onvif_username, onvif_username, sizeof(s->onvif_username) - 1);
-            s->onvif_username[sizeof(s->onvif_username) - 1] = '\0';
+            safe_strcpy(s->onvif_username, onvif_username, sizeof(s->onvif_username), 0);
         }
 
         const char *onvif_password = (const char *)sqlite3_column_text(stmt, COL_ONVIF_PASSWORD);
         if (onvif_password) {
-            strncpy(s->onvif_password, onvif_password, sizeof(s->onvif_password) - 1);
-            s->onvif_password[sizeof(s->onvif_password) - 1] = '\0';
+            safe_strcpy(s->onvif_password, onvif_password, sizeof(s->onvif_password), 0);
         }
 
         const char *onvif_profile = (const char *)sqlite3_column_text(stmt, COL_ONVIF_PROFILE);
         if (onvif_profile) {
-            strncpy(s->onvif_profile, onvif_profile, sizeof(s->onvif_profile) - 1);
-            s->onvif_profile[sizeof(s->onvif_profile) - 1] = '\0';
+            safe_strcpy(s->onvif_profile, onvif_profile, sizeof(s->onvif_profile), 0);
         }
 
         s->onvif_port = (sqlite3_column_type(stmt, COL_ONVIF_PORT) != SQLITE_NULL)
@@ -1178,16 +1155,14 @@ int get_all_stream_configs(stream_config_t *streams, int max_count) {
         // Tags
         const char *tags_val = (const char *)sqlite3_column_text(stmt, COL_TAGS);
         if (tags_val) {
-            strncpy(s->tags, tags_val, sizeof(s->tags) - 1);
-            s->tags[sizeof(s->tags) - 1] = '\0';
+            safe_strcpy(s->tags, tags_val, sizeof(s->tags), 0);
         } else {
             s->tags[0] = '\0';
         }
 
         const char *admin_url = (const char *)sqlite3_column_text(stmt, COL_ADMIN_URL);
         if (admin_url) {
-            strncpy(s->admin_url, admin_url, sizeof(s->admin_url) - 1);
-            s->admin_url[sizeof(s->admin_url) - 1] = '\0';
+            safe_strcpy(s->admin_url, admin_url, sizeof(s->admin_url), 0);
         } else {
             s->admin_url[0] = '\0';
         }
@@ -1198,8 +1173,7 @@ int get_all_stream_configs(stream_config_t *streams, int max_count) {
         // Cross-stream motion trigger source
         const char *motion_trigger_src = (const char *)sqlite3_column_text(stmt, COL_MOTION_TRIGGER_SOURCE);
         if (motion_trigger_src) {
-            strncpy(s->motion_trigger_source, motion_trigger_src, sizeof(s->motion_trigger_source) - 1);
-            s->motion_trigger_source[sizeof(s->motion_trigger_source) - 1] = '\0';
+            safe_strcpy(s->motion_trigger_source, motion_trigger_src, sizeof(s->motion_trigger_source), 0);
         } else {
             s->motion_trigger_source[0] = '\0';
         }
@@ -1524,8 +1498,7 @@ int get_all_stream_names(char names[][MAX_STREAM_NAME], int max_count) {
     while (sqlite3_step(stmt) == SQLITE_ROW && count < max_count) {
         const char *name = (const char *)sqlite3_column_text(stmt, 0);
         if (name) {
-            strncpy(names[count], name, MAX_STREAM_NAME-1);
-            names[count][MAX_STREAM_NAME-1] = '\0';
+            safe_strcpy(names[count], name, MAX_STREAM_NAME, 0);
             count++;
         }
     }

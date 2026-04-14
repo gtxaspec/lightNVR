@@ -38,9 +38,7 @@ void test_soap12_full_fault(void) {
         "<s:Reason><s:Text xml:lang=\"en\">Sender not Authorized</s:Text></s:Reason>"
         "</s:Fault></s:Body></s:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), "TestFull");
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), "TestFull");
     /* No crash = pass */
     TEST_PASS();
 }
@@ -56,9 +54,7 @@ void test_soap12_code_no_subcode(void) {
         "<s:Reason><s:Text>Internal error</s:Text></s:Reason>"
         "</s:Fault></s:Body></s:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), "TestNoSubcode");
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), "TestNoSubcode");
     TEST_PASS();
 }
 
@@ -72,9 +68,7 @@ void test_soap12_reason_only(void) {
         "<s:Reason><s:Text>Something went wrong</s:Text></s:Reason>"
         "</s:Fault></s:Body></s:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), "TestReasonOnly");
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), "TestReasonOnly");
     TEST_PASS();
 }
 
@@ -88,9 +82,7 @@ void test_soap11_faultstring(void) {
         "<faultstring>Authentication failed</faultstring>"
         "</SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), "TestSOAP11");
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), "TestSOAP11");
     TEST_PASS();
 }
 
@@ -102,9 +94,7 @@ void test_no_fault_element(void) {
         "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">"
         "<s:Body><s:SomeResponse>OK</s:SomeResponse></s:Body></s:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), "TestNoFault");
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), "TestNoFault");
     TEST_PASS();
 }
 
@@ -113,9 +103,7 @@ void test_no_fault_element(void) {
  * ================================================================ */
 void test_unparseable_xml(void) {
     const char *garbage = "This is not XML at all <><><";
-    char *buf = strdup(garbage);
-    onvif_log_soap_fault(buf, strlen(buf), "TestGarbage");
-    free(buf);
+    onvif_log_soap_fault(garbage, strlen(garbage), "TestGarbage");
     TEST_PASS();
 }
 
@@ -141,9 +129,7 @@ void test_null_context(void) {
         "<s:Reason><s:Text>Error</s:Text></s:Reason>"
         "</s:Fault></s:Body></s:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), NULL);
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), NULL);
     TEST_PASS();
 }
 
@@ -155,9 +141,7 @@ void test_empty_fault(void) {
         "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">"
         "<s:Body><s:Fault></s:Fault></s:Body></s:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), "TestEmptyFault");
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), "TestEmptyFault");
     TEST_PASS();
 }
 
@@ -174,9 +158,7 @@ void test_soap_env_namespace(void) {
         "<SOAP-ENV:Reason><SOAP-ENV:Text>Not supported</SOAP-ENV:Text></SOAP-ENV:Reason>"
         "</SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), "TestSOAPENV");
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), "TestSOAPENV");
     TEST_PASS();
 }
 
@@ -191,9 +173,7 @@ void test_uppercase_s_namespace(void) {
         "<S:Reason><S:Text>Bad request</S:Text></S:Reason>"
         "</S:Fault></S:Body></S:Envelope>";
 
-    char *buf = strdup(xml);
-    onvif_log_soap_fault(buf, strlen(buf), "TestUpperS");
-    free(buf);
+    onvif_log_soap_fault(xml, strlen(xml), "TestUpperS");
     TEST_PASS();
 }
 

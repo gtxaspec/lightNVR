@@ -26,6 +26,7 @@
 #define LOG_COMPONENT "RecordingsAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "database/db_recordings.h"
 #include "database/db_auth.h"
 
@@ -143,8 +144,8 @@ typedef enum { DL_PENDING=0, DL_RUNNING, DL_COMPLETE, DL_ERROR } dl_status_t;
 
 typedef struct {
     char        job_id[64];
-    char        zip_filename[256];
-    char        tmp_path[256];
+    char        zip_filename[MAX_PATH_LENGTH];
+    char        tmp_path[MAX_PATH_LENGTH];
     uint64_t    ids[MAX_DL_IDS];
     int         id_count;
     dl_status_t status;
@@ -221,7 +222,7 @@ static void *zip_worker(void *arg) {
     log_set_thread_context("BatchDownload", NULL);
     dl_thread_arg_t *a = (dl_thread_arg_t *)arg;
     char job_id[64];
-    strncpy(job_id, a->job_id, sizeof(job_id)-1);
+    safe_strcpy(job_id, a->job_id, sizeof(job_id), 0);
     free(a);
 
     /* Grab job info */
@@ -239,7 +240,11 @@ static void *zip_worker(void *arg) {
         log_error("zip_worker: mkstemp failed: %s", strerror(errno));
         pthread_mutex_lock(&s_dl_mutex);
         slot = find_dl_job(job_id);
-        if (slot>=0) { s_dl_jobs[slot].status=DL_ERROR; strncpy(s_dl_jobs[slot].error,"Failed to create temp file",255); s_dl_jobs[slot].updated_at=time(NULL); }
+        if (slot>=0) { 
+            s_dl_jobs[slot].status = DL_ERROR;
+            safe_strcpy(s_dl_jobs[slot].error, "Failed to create temp file", 256, 0);
+            s_dl_jobs[slot].updated_at = time(NULL);
+        }
         pthread_mutex_unlock(&s_dl_mutex);
         return NULL;
     }
@@ -264,7 +269,7 @@ static void *zip_worker(void *arg) {
         /* Build entry name: stream_YYYY-MM-DDTHH-mm-ss.ext */
         const char *base = strrchr(rec.file_path, '/');
         base = base ? base+1 : rec.file_path;
-        snprintf(entries[entry_count].name, sizeof(entries[entry_count].name), "%s", base);
+        safe_strcpy(entries[entry_count].name, base, sizeof(entries[entry_count].name), 0);
 
         uint64_t fsize = 0;
         uint32_t crc   = crc32_of_file(rec.file_path, &fsize);
@@ -310,7 +315,7 @@ static void *zip_worker(void *arg) {
     pthread_mutex_lock(&s_dl_mutex);
     slot = find_dl_job(job_id);
     if (slot>=0) {
-        strncpy(s_dl_jobs[slot].tmp_path, tmp_template, sizeof(s_dl_jobs[slot].tmp_path)-1);
+        safe_strcpy(s_dl_jobs[slot].tmp_path, tmp_template, sizeof(s_dl_jobs[slot].tmp_path), 0);
         s_dl_jobs[slot].status     = DL_COMPLETE;
         s_dl_jobs[slot].current    = job.id_count;
         s_dl_jobs[slot].updated_at = time(NULL);
@@ -372,7 +377,7 @@ void handle_batch_download_recordings(const http_request_t *req, http_response_t
     batch_dl_job_t *job = &s_dl_jobs[slot];
     memset(job, 0, sizeof(*job));
     gen_uuid(job->job_id);
-    strncpy(job->zip_filename, filename_raw, sizeof(job->zip_filename)-1);
+    safe_strcpy(job->zip_filename, filename_raw, sizeof(job->zip_filename), 0);
     job->id_count = count;
     job->total    = count;
     job->status   = DL_PENDING;
@@ -385,14 +390,14 @@ void handle_batch_download_recordings(const http_request_t *req, http_response_t
     }
 
     char job_id[64];
-    strncpy(job_id, job->job_id, sizeof(job_id)-1);
+    safe_strcpy(job_id, job->job_id, sizeof(job_id), 0);
     pthread_mutex_unlock(&s_dl_mutex);
     cJSON_Delete(json);
 
     /* Spawn worker thread */
     dl_thread_arg_t *targ = malloc(sizeof(dl_thread_arg_t));
     if (!targ) { http_response_set_json_error(res, 500, "Out of memory"); return; }
-    strncpy(targ->job_id, job_id, sizeof(targ->job_id)-1);
+    safe_strcpy(targ->job_id, job_id, sizeof(targ->job_id), 0);
 
     pthread_t tid;
     pthread_attr_t attr;
@@ -484,9 +489,10 @@ void handle_batch_download_result(const http_request_t *req, http_response_t *re
         http_response_set_json_error(res, 409, err);
         return;
     }
-    char tmp_path[256], zip_filename[256];
-    strncpy(tmp_path,     s_dl_jobs[slot].tmp_path,     sizeof(tmp_path)-1);
-    strncpy(zip_filename, s_dl_jobs[slot].zip_filename, sizeof(zip_filename)-1);
+    char tmp_path[MAX_PATH_LENGTH];
+    char zip_filename[MAX_PATH_LENGTH];
+    safe_strcpy(tmp_path,     s_dl_jobs[slot].tmp_path,     sizeof(tmp_path), 0);
+    safe_strcpy(zip_filename, s_dl_jobs[slot].zip_filename, sizeof(zip_filename), 0);
     /*
      * Mark the slot as inactive so it can be reused, but do NOT unlink the
      * temp file here.  http_serve_file() uses libuv async I/O: it queues a

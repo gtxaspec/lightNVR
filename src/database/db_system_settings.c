@@ -8,6 +8,7 @@
 #include "database/db_system_settings.h"
 #include "database/db_core.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 int db_get_system_setting(const char *key, char *out, int out_len) {
     if (!key || !out || out_len <= 0) return -1;
@@ -27,8 +28,7 @@ int db_get_system_setting(const char *key, char *out, int out_len) {
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         const char *val = (const char *)sqlite3_column_text(stmt, 0);
         if (val) {
-            strncpy(out, val, out_len - 1);
-            out[out_len - 1] = '\0';
+            safe_strcpy(out, val, out_len, 0);
             rc = 0;
         }
     }

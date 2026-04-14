@@ -5,9 +5,11 @@
 #include <stdbool.h>
 #include <time.h>
 
+#include "core/config.h"
+
 // Recording file information structure
 typedef struct {
-    char path[256];
+    char path[MAX_PATH_LENGTH];
     char stream_name[64];
     time_t start_time;
     time_t end_time;

@@ -3,7 +3,9 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "video/stream_state.h"
 #include "video/hls/hls_context.h"
 
@@ -108,8 +110,7 @@ void mark_stream_stopping(const char *stream_name) {
 
     // Add to the list if there's space
     if (stopping_stream_count < MAX_STREAMS) {
-        strncpy(stopping_streams[stopping_stream_count], stream_name, MAX_STREAM_NAME - 1);
-        stopping_streams[stopping_stream_count][MAX_STREAM_NAME - 1] = '\0';
+        safe_strcpy(stopping_streams[stopping_stream_count], stream_name, MAX_STREAM_NAME, 0);
         stopping_stream_count++;
         log_info("Marked stream %s as stopping (legacy method)", stream_name);
     }
@@ -159,7 +160,7 @@ void unmark_stream_stopping(const char *stream_name) {
         if (strcmp(stopping_streams[i], stream_name) == 0) {
             // Remove by shifting remaining entries
             for (int j = i; j < stopping_stream_count - 1; j++) {
-                strncpy(stopping_streams[j], stopping_streams[j + 1], MAX_STREAM_NAME);
+                safe_strcpy(stopping_streams[j], stopping_streams[j + 1], MAX_STREAM_NAME, 0);
             }
             stopping_stream_count--;
             log_info("Unmarked stream %s as stopping (legacy method)", stream_name);

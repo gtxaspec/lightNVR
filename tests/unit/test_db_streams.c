@@ -20,6 +20,7 @@
 #include "unity.h"
 #include "database/db_core.h"
 #include "database/db_streams.h"
+#include "utils/strings.h"
 
 #define TEST_DB_PATH "/tmp/lightnvr_unit_streams_test.db"
 
@@ -27,9 +28,9 @@
 static stream_config_t make_stream(const char *name, bool enabled) {
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, name, sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://camera/stream", sizeof(s.url) - 1);
-    strncpy(s.codec, "h264", sizeof(s.codec) - 1);
+    safe_strcpy(s.name, name, sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://camera/stream", sizeof(s.url), 0);
+    safe_strcpy(s.codec, "h264", sizeof(s.codec), 0);
     s.enabled  = enabled;
     s.width    = 1920;
     s.height   = 1080;
@@ -41,7 +42,7 @@ static stream_config_t make_stream(const char *name, bool enabled) {
     s.detection_interval  = 10;
     s.pre_detection_buffer  = 5;
     s.post_detection_buffer = 10;
-    strncpy(s.detection_object_filter, "none", sizeof(s.detection_object_filter) - 1);
+    safe_strcpy(s.detection_object_filter, "none", sizeof(s.detection_object_filter), 0);
     s.tier_critical_multiplier  = 3.0;
     s.tier_important_multiplier = 2.0;
     s.tier_ephemeral_multiplier = 0.25;
@@ -91,14 +92,14 @@ void test_get_stream_config_by_name_round_trip(void) {
 
 void test_stream_admin_url_round_trip(void) {
     stream_config_t s = make_stream("cam_admin", true);
-    strncpy(s.admin_url, "http://camera.local/", sizeof(s.admin_url) - 1);
+    safe_strcpy(s.admin_url, "http://camera.local/", sizeof(s.admin_url), 0);
     add_stream_config(&s);
 
     stream_config_t got;
     TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_admin", &got));
     TEST_ASSERT_EQUAL_STRING("http://camera.local/", got.admin_url);
 
-    strncpy(s.admin_url, "https://camera.local/settings", sizeof(s.admin_url) - 1);
+    safe_strcpy(s.admin_url, "https://camera.local/settings", sizeof(s.admin_url), 0);
     TEST_ASSERT_EQUAL_INT(0, update_stream_config("cam_admin", &s));
     TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_admin", &got));
     TEST_ASSERT_EQUAL_STRING("https://camera.local/settings", got.admin_url);
@@ -112,7 +113,7 @@ void test_update_stream_config_changes_url(void) {
     stream_config_t s = make_stream("cam_upd", true);
     add_stream_config(&s);
 
-    strncpy(s.url, "rtsp://new/stream", sizeof(s.url) - 1);
+    safe_strcpy(s.url, "rtsp://new/stream", sizeof(s.url), 0);
     int rc = update_stream_config("cam_upd", &s);
     TEST_ASSERT_EQUAL_INT(0, rc);
 
@@ -229,7 +230,7 @@ void test_motion_trigger_source_defaults_empty(void) {
 
 void test_motion_trigger_source_round_trip(void) {
     stream_config_t s = make_stream("cam_ptz", true);
-    strncpy(s.motion_trigger_source, "cam_fixed", sizeof(s.motion_trigger_source) - 1);
+    safe_strcpy(s.motion_trigger_source, "cam_fixed", sizeof(s.motion_trigger_source), 0);
     add_stream_config(&s);
 
     stream_config_t got;
@@ -239,10 +240,10 @@ void test_motion_trigger_source_round_trip(void) {
 
 void test_motion_trigger_source_update(void) {
     stream_config_t s = make_stream("cam_ptz_upd", true);
-    strncpy(s.motion_trigger_source, "cam_fixed_old", sizeof(s.motion_trigger_source) - 1);
+    safe_strcpy(s.motion_trigger_source, "cam_fixed_old", sizeof(s.motion_trigger_source), 0);
     add_stream_config(&s);
 
-    strncpy(s.motion_trigger_source, "cam_fixed_new", sizeof(s.motion_trigger_source) - 1);
+    safe_strcpy(s.motion_trigger_source, "cam_fixed_new", sizeof(s.motion_trigger_source), 0);
     TEST_ASSERT_EQUAL_INT(0, update_stream_config("cam_ptz_upd", &s));
 
     stream_config_t got;
@@ -253,7 +254,7 @@ void test_motion_trigger_source_update(void) {
 void test_motion_trigger_source_in_get_all(void) {
     stream_config_t src = make_stream("cam_src", true);
     stream_config_t ptz = make_stream("cam_ptz_all", true);
-    strncpy(ptz.motion_trigger_source, "cam_src", sizeof(ptz.motion_trigger_source) - 1);
+    safe_strcpy(ptz.motion_trigger_source, "cam_src", sizeof(ptz.motion_trigger_source), 0);
     add_stream_config(&src);
     add_stream_config(&ptz);
 

@@ -1,12 +1,14 @@
-#include "video/onvif_ptz.h"
-#include "video/onvif_soap.h"
-#include "core/logger.h"
-#include "core/url_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
 #include "ezxml.h"
+
+#include "video/onvif_ptz.h"
+#include "video/onvif_soap.h"
+#include "core/logger.h"
+#include "core/url_utils.h"
+#include "utils/strings.h"
 
 // Structure to store memory for CURL responses
 typedef struct {
@@ -393,12 +395,10 @@ int onvif_ptz_get_presets(const char *ptz_url, const char *profile_token,
                     if (!name_elem) name_elem = ezxml_child(preset, "Name");
 
                     if (token) {
-                        strncpy(presets[count].token, token, sizeof(presets[count].token) - 1);
-                        presets[count].token[sizeof(presets[count].token) - 1] = '\0';
+                        safe_strcpy(presets[count].token, token, sizeof(presets[count].token), 0);
                     }
                     if (name_elem && name_elem->txt) {
-                        strncpy(presets[count].name, name_elem->txt, sizeof(presets[count].name) - 1);
-                        presets[count].name[sizeof(presets[count].name) - 1] = '\0';
+                        safe_strcpy(presets[count].name, name_elem->txt, sizeof(presets[count].name), 0);
                     }
                     count++;
                 }
@@ -494,8 +494,7 @@ int onvif_ptz_set_preset(const char *ptz_url, const char *profile_token,
                     ezxml_t token_elem = ezxml_child(set_preset_response, "tptz:PresetToken");
                     if (!token_elem) token_elem = ezxml_child(set_preset_response, "PresetToken");
                     if (token_elem && token_elem->txt) {
-                        strncpy(preset_token, token_elem->txt, token_size - 1);
-                        preset_token[token_size - 1] = '\0';
+                        safe_strcpy(preset_token, token_elem->txt, token_size, 0);
                     }
                 }
             }

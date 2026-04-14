@@ -14,6 +14,7 @@
 #define LOG_COMPONENT "HTTP"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "database/db_auth.h"
 
 cJSON* httpd_parse_json_body(const http_request_t *req) {
@@ -77,46 +78,6 @@ static int base64_decode(const char *src, size_t src_len, char *dst, size_t dst_
     return (int)j;
 }
 
-static char *trim_ascii_whitespace(char *value) {
-    if (!value) {
-        return NULL;
-    }
-
-    while (*value && isspace((unsigned char)*value)) {
-        value++;
-    }
-
-    size_t len = strlen(value);
-    while (len > 0 && isspace((unsigned char)value[len - 1])) {
-        value[--len] = '\0';
-    }
-
-    return value;
-}
-
-static bool copy_trimmed_value(const char *input, char *output, size_t output_size) {
-    if (!input || !output || output_size == 0) {
-        return false;
-    }
-
-    output[0] = '\0';
-
-    char buffer[1024] = {0};
-    if (strlen(input) >= sizeof(buffer)) {
-        return false;
-    }
-    strncpy(buffer, input, sizeof(buffer) - 1);
-
-    char *trimmed = trim_ascii_whitespace(buffer);
-    if (!trimmed || trimmed[0] == '\0' || strlen(trimmed) >= output_size) {
-        return false;
-    }
-
-    strncpy(output, trimmed, output_size - 1);
-    output[output_size - 1] = '\0';
-    return true;
-}
-
 static bool normalize_ip_literal(const char *input, char *normalized, size_t normalized_size) {
     if (!input || !normalized || normalized_size == 0) {
         return false;
@@ -124,11 +85,11 @@ static bool normalize_ip_literal(const char *input, char *normalized, size_t nor
 
     normalized[0] = '\0';
 
-    char candidate_buffer[INET6_ADDRSTRLEN + 8] = {0};
+    char candidate_buffer[INET6_ADDRSTRLEN + 8];
     if (strlen(input) >= sizeof(candidate_buffer)) {
         return false;
     }
-    strncpy(candidate_buffer, input, sizeof(candidate_buffer) - 1);
+    safe_strcpy(candidate_buffer, input, sizeof(candidate_buffer), 0);
 
     char *candidate = trim_ascii_whitespace(candidate_buffer);
     if (!candidate || candidate[0] == '\0') {
@@ -161,8 +122,7 @@ static bool ip_matches_cidr_list(const char *cidr_list, const char *ip) {
 
     user_t rules;
     memset(&rules, 0, sizeof(rules));
-    strncpy(rules.allowed_login_cidrs, cidr_list, sizeof(rules.allowed_login_cidrs) - 1);
-    rules.allowed_login_cidrs[sizeof(rules.allowed_login_cidrs) - 1] = '\0';
+    safe_strcpy(rules.allowed_login_cidrs, cidr_list, sizeof(rules.allowed_login_cidrs), 0);
     rules.has_login_cidr_restriction = true;
     return db_auth_ip_allowed_for_user(&rules, ip);
 }
@@ -172,11 +132,11 @@ static int resolve_client_ip_from_forwarded_headers(const http_request_t *req,
                                                     size_t client_ip_size) {
     const char *xff = http_request_get_header(req, "X-Forwarded-For");
     if (xff && xff[0] != '\0') {
-        char xff_copy[1024] = {0};
+        char xff_copy[1024];
         if (strlen(xff) >= sizeof(xff_copy)) {
             return -1;
         }
-        strncpy(xff_copy, xff, sizeof(xff_copy) - 1);
+        safe_strcpy(xff_copy, xff, sizeof(xff_copy), 0);
 
         char normalized_tokens[16][INET6_ADDRSTRLEN] = {{0}};
         int token_count = 0;
@@ -188,15 +148,14 @@ static int resolve_client_ip_from_forwarded_headers(const http_request_t *req,
             if (!normalize_ip_literal(token, normalized, sizeof(normalized))) {
                 return -1;
             }
-            strncpy(normalized_tokens[token_count], normalized, sizeof(normalized_tokens[token_count]) - 1);
+            safe_strcpy(normalized_tokens[token_count], normalized, sizeof(normalized_tokens[token_count]), 0);
             token_count++;
         }
 
         if (token_count > 0) {
             for (int i = token_count - 1; i >= 0; --i) {
                 if (!ip_matches_cidr_list(g_config.trusted_proxy_cidrs, normalized_tokens[i])) {
-                    strncpy(client_ip, normalized_tokens[i], client_ip_size - 1);
-                    client_ip[client_ip_size - 1] = '\0';
+                    safe_strcpy(client_ip, normalized_tokens[i], client_ip_size, 0);
                     return 0;
                 }
             }
@@ -209,8 +168,7 @@ static int resolve_client_ip_from_forwarded_headers(const http_request_t *req,
         if (!normalize_ip_literal(x_real_ip, normalized, sizeof(normalized))) {
             return -1;
         }
-        strncpy(client_ip, normalized, client_ip_size - 1);
-        client_ip[client_ip_size - 1] = '\0';
+        safe_strcpy(client_ip, normalized, client_ip_size, 0);
         return 0;
     }
 
@@ -243,10 +201,8 @@ int httpd_get_basic_auth_credentials(const http_request_t *req,
     if (!colon) return -1;
 
     *colon = '\0';
-    strncpy(username, decoded, username_size - 1);
-    username[username_size - 1] = '\0';
-    strncpy(password, colon + 1, password_size - 1);
-    password[password_size - 1] = '\0';
+    safe_strcpy(username, decoded, username_size, 0);
+    safe_strcpy(password, colon + 1, password_size, 0);
 
     return 0;
 }
@@ -259,7 +215,7 @@ int httpd_get_api_key(const http_request_t *req, char *api_key, size_t api_key_s
     api_key[0] = '\0';
 
     const char *header_value = http_request_get_header(req, "X-API-Key");
-    if (header_value && copy_trimmed_value(header_value, api_key, api_key_size)) {
+    if (header_value && copy_trimmed_value(api_key, api_key_size, header_value, 0)) {
         return 0;
     }
 
@@ -268,7 +224,7 @@ int httpd_get_api_key(const http_request_t *req, char *api_key, size_t api_key_s
         return -1;
     }
 
-    return copy_trimmed_value(auth + 7, api_key, api_key_size) ? 0 : -1;
+    return copy_trimmed_value(api_key, api_key_size, auth + 7, 0) ? 0 : -1;
 }
 
 int httpd_get_effective_client_ip(const http_request_t *req, char *client_ip, size_t client_ip_size) {
@@ -283,7 +239,7 @@ int httpd_get_effective_client_ip(const http_request_t *req, char *client_ip, si
 
     char peer_ip[INET6_ADDRSTRLEN] = {0};
     if (!normalize_ip_literal(req->client_ip, peer_ip, sizeof(peer_ip))) {
-        return copy_trimmed_value(req->client_ip, client_ip, client_ip_size) ? 0 : -1;
+        return copy_trimmed_value(client_ip, client_ip_size, req->client_ip, 0) ? 0 : -1;
     }
 
     if (g_config.trusted_proxy_cidrs[0] != '\0' &&
@@ -292,8 +248,7 @@ int httpd_get_effective_client_ip(const http_request_t *req, char *client_ip, si
         return 0;
     }
 
-    strncpy(client_ip, peer_ip, client_ip_size - 1);
-    client_ip[client_ip_size - 1] = '\0';
+    safe_strcpy(client_ip, peer_ip, client_ip_size, 0);
     return 0;
 }
 
@@ -392,14 +347,13 @@ int httpd_get_authenticated_user(const http_request_t *req, user_t *user) {
 
     char effective_client_ip[64] = {0};
     if (httpd_get_effective_client_ip(req, effective_client_ip, sizeof(effective_client_ip)) != 0) {
-        strncpy(effective_client_ip, req->client_ip, sizeof(effective_client_ip) - 1);
-        effective_client_ip[sizeof(effective_client_ip) - 1] = '\0';
+        safe_strcpy(effective_client_ip, req->client_ip, sizeof(effective_client_ip), 0);
     }
 
     // If authentication is disabled, return a dummy admin user
     if (!g_config.web_auth_enabled) {
         memset(user, 0, sizeof(user_t));
-        strncpy(user->username, "admin", sizeof(user->username) - 1);
+        safe_strcpy(user->username, "admin", sizeof(user->username), 0);
         user->role = USER_ROLE_ADMIN;
         user->is_active = true;
         return 1;
@@ -500,7 +454,7 @@ int httpd_check_viewer_access(const http_request_t *req, user_t *user) {
     if (!g_config.web_auth_enabled) {
         // Create a pseudo-user for unauthenticated access
         memset(user, 0, sizeof(user_t));
-        strncpy(user->username, "anonymous", sizeof(user->username) - 1);
+        safe_strcpy(user->username, "anonymous", sizeof(user->username), 0);
         user->role = USER_ROLE_VIEWER;
         user->is_active = true;
         return 1;
@@ -510,7 +464,7 @@ int httpd_check_viewer_access(const http_request_t *req, user_t *user) {
     if (g_config.demo_mode) {
         // Create a demo viewer pseudo-user
         memset(user, 0, sizeof(user_t));
-        strncpy(user->username, "demo", sizeof(user->username) - 1);
+        safe_strcpy(user->username, "demo", sizeof(user->username), 0);
         user->role = USER_ROLE_VIEWER;
         user->is_active = true;
         log_debug("Demo mode: granting viewer access to unauthenticated user");

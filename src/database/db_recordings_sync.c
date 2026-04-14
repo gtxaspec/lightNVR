@@ -22,6 +22,7 @@
 #include "core/shutdown_coordinator.h"
 #include "database/database_manager.h"
 #include "database/db_recordings.h"
+#include "utils/strings.h"
 
 // Thread state
 static struct {
@@ -132,7 +133,7 @@ static int sync_recordings_needing_size_update(void) {
     // Collect recordings to sync (we'll update them outside the query loop)
     typedef struct {
         uint64_t id;
-        char file_path[512];
+        char file_path[MAX_PATH_LENGTH];
     } sync_item_t;
 
     sync_item_t *items = NULL;
@@ -160,8 +161,7 @@ static int sync_recordings_needing_size_update(void) {
         items[item_count].id = (uint64_t)sqlite3_column_int64(stmt, 0);
         const char *path = (const char *)sqlite3_column_text(stmt, 1);
         if (path) {
-            strncpy(items[item_count].file_path, path, sizeof(items[item_count].file_path) - 1);
-            items[item_count].file_path[sizeof(items[item_count].file_path) - 1] = '\0';
+            safe_strcpy(items[item_count].file_path, path, sizeof(items[item_count].file_path), 0);
         } else {
             items[item_count].file_path[0] = '\0';
         }

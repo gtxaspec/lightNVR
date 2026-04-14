@@ -21,6 +21,7 @@
 #define LOG_COMPONENT "go2rtcAPI"
 #include "core/logger.h"
 #include "utils/memory.h"
+#include "utils/strings.h"
 
 #ifdef HTTP_BACKEND_LIBUV
 #include "web/libuv_connection.h"
@@ -245,7 +246,7 @@ void handle_go2rtc_proxy(const http_request_t *req, http_response_t *res) {
     // Set response
     res->status_code = (int)ctx.http_code;
     if (ctx.content_type[0] != '\0') {
-        strncpy(res->content_type, ctx.content_type, sizeof(res->content_type) - 1);
+        safe_strcpy(res->content_type, ctx.content_type, sizeof(res->content_type), 0);
     }
 
     // Add CORS headers

@@ -17,23 +17,23 @@
 #include "web/web_server.h"
 #include "core/logger.h"
 #include "core/daemon.h"
+#include "core/path_utils.h"
+#include "utils/strings.h"
 
 extern volatile bool running; // Reference to the global variable defined in main.c
 
 // Global variable to store PID file path
-static char pid_file_path[256] = "/run/lightnvr.pid";
+static char pid_file_path[MAX_PATH_LENGTH] = "/run/lightnvr.pid";
 
 // Forward declarations
 static void daemon_signal_handler(int sig);
-static int write_pid_file(const char *pid_file);
 static int check_running_daemon(const char *pid_file);
 
 // Initialize daemon - simplified version that works on all platforms including Linux 4.4
 int init_daemon(const char *pid_file) {
     // Store PID file path
     if (pid_file) {
-        strncpy(pid_file_path, pid_file, sizeof(pid_file_path) - 1);
-        pid_file_path[sizeof(pid_file_path) - 1] = '\0';
+        safe_strcpy(pid_file_path, pid_file, sizeof(pid_file_path), 0);
     }
 
     // Check if daemon is already running
@@ -118,7 +118,8 @@ int init_daemon(const char *pid_file) {
 
     // Write PID file
     log_info("Writing PID file...");
-    if (write_pid_file(pid_file_path) != 0) {
+    int fd = write_pid_file(pid_file_path);
+    if (fd < 0) {
         log_error("Failed to write PID file, daemon initialization failed");
         return -1;
     }
@@ -128,20 +129,7 @@ int init_daemon(const char *pid_file) {
     // Add a small delay to ensure everything is properly initialized
     usleep(100000); // 100ms
 
-    return 0;
-}
-
-// Cleanup daemon resources
-int cleanup_daemon(void) {
-    log_info("Cleaning up daemon resources");
-    
-    // Remove PID file
-    if (remove_daemon_pid_file(pid_file_path) != 0) {
-        log_warn("Failed to remove PID file during cleanup");
-        // Continue anyway, not a fatal error
-    }
-
-    return 0;
+    return fd;
 }
 
 // Async-signal-safe write helper for daemon signal handler
@@ -207,26 +195,14 @@ static void daemon_signal_handler(int sig) {
 }
 
 // Write PID file
-static int write_pid_file(const char *pid_file) {
+int write_pid_file(const char *pid_file) {
     // Make sure the directory exists
-    const char *last_slash = strrchr(pid_file, '/');
-    if (last_slash) {
-        char dir_path[256] = {0};
-        size_t dir_len = (size_t)(last_slash - pid_file);
-        strncpy(dir_path, pid_file, dir_len);
-        dir_path[dir_len] = '\0';
-        
-        // Create directory if it doesn't exist
-        struct stat st;
-        if (stat(dir_path, &st) != 0) {
-            if (mkdir(dir_path, 0755) != 0 && errno != EEXIST) {
-                log_error("Could not create directory for PID file: %s", strerror(errno));
-                return -1;
-            }
-        }
+    if (ensure_path(pid_file) != 0) {
+        log_error("Failed to create PID file directory %s: %s", pid_file, strerror(errno));
+        return -1;
     }
     
-    // Open the file with exclusive locking
+    // Open the file initially without exclusive locking
     int fd = open(pid_file, O_RDWR | O_CREAT, 0644);
     if (fd < 0) {
         log_error("Failed to open PID file %s: %s", pid_file, strerror(errno));
@@ -271,11 +247,16 @@ static int write_pid_file(const char *pid_file) {
     }
     
     log_info("Wrote PID %d to file %s", getpid(), pid_file);
-    return 0;
+    return fd;
 }
 
 // Remove PID file
-int remove_daemon_pid_file(const char *pid_file) {
+int remove_pid_file(int fd, const char *pid_file) {
+    if (fd >= 0) {
+        // Release the lock by closing the file
+        close(fd);
+    }
+
     // Try to remove the file
     if (unlink(pid_file) != 0) {
         if (errno == ENOENT) {
@@ -310,9 +291,8 @@ static int check_running_daemon(const char *pid_file) {
     if (lockf(fd, F_TLOCK, 0) == 0) {
         // We got the lock, which means no other process has it
         // This is a stale PID file
-        close(fd);
         log_warn("Found stale PID file %s (not locked), removing it", pid_file);
-        remove_daemon_pid_file(pid_file);
+        remove_pid_file(fd, pid_file);
         return 0;
     }
     
@@ -348,7 +328,7 @@ static int check_running_daemon(const char *pid_file) {
             // Process is not running, but file is locked?
             // This is unusual, but could happen if the file is locked by another process
             log_warn("Found stale PID file %s (locked but process %d not running), removing it", pid_file, pid);
-            remove_daemon_pid_file(pid_file);
+            remove_pid_file(-1, pid_file);
             return 0;
         } else {
             log_error("Failed to check process status: %s", strerror(errno));
@@ -357,167 +337,14 @@ static int check_running_daemon(const char *pid_file) {
     }
 }
 
-// Stop running daemon
-int stop_daemon(const char *pid_file) {
-    char file_path[256];
-
-    if (pid_file) {
-        strncpy(file_path, pid_file, sizeof(file_path) - 1);
-        file_path[sizeof(file_path) - 1] = '\0';
-    } else {
-        strncpy(file_path, pid_file_path, sizeof(file_path) - 1);
-        file_path[sizeof(file_path) - 1] = '\0';
-    }
-
-    // Open and read PID file
-    int fd = open(file_path, O_RDONLY);
-    if (fd < 0) {
-        if (errno == ENOENT) {
-            log_info("PID file %s does not exist, daemon is not running", file_path);
-            return 0;
-        }
-        
-        log_error("Failed to open PID file %s: %s", file_path, strerror(errno));
-        return -1;
-    }
-
-    // Read PID from file
-    char pid_str[16];
-    ssize_t bytes_read = read(fd, pid_str, sizeof(pid_str) - 1);
-    close(fd);
-    
-    if (bytes_read <= 0) {
-        log_error("Failed to read PID from file %s", file_path);
-        return -1;
-    }
-    
-    // Null-terminate the string
-    pid_str[bytes_read] = '\0';
-    
-    // Parse the PID
-    char *end_ptr;
-    long pid_val = strtol(pid_str, &end_ptr, 10);
-    if (end_ptr == pid_str || pid_val <= 0) {
-        log_error("Failed to parse PID from file %s", file_path);
-        return -1;
-    }
-    pid_t pid = (pid_t)pid_val;
-
-    // First try SIGTERM for a graceful shutdown
-    log_info("Sending SIGTERM to process %d", pid);
-    if (kill(pid, SIGTERM) != 0) {
-        if (errno == ESRCH) {
-            // Process has already terminated
-            log_info("Process %d has already terminated", pid);
-            remove_daemon_pid_file(file_path);
-            return 0;
-        } else {
-            log_warn("Failed to send SIGTERM to process %d: %s", pid, strerror(errno));
-            // Continue to try SIGKILL
-        }
-    } else {
-        // Wait for process to terminate after SIGTERM (doubled from 30 to 60 iterations)
-        for (int i = 0; i < 60; i++) {
-            if (kill(pid, 0) != 0) {
-                if (errno == ESRCH) {
-                    // Process has terminated
-                    log_info("Process %d has terminated after SIGTERM", pid);
-                    
-                    // Wait for PID file to be released
-                    for (int j = 0; j < 10; j++) {
-                        // Check if PID file still exists and is locked
-                        int test_fd = open(file_path, O_RDWR);
-                        if (test_fd < 0) {
-                            if (errno == ENOENT) {
-                                // PID file doesn't exist anymore, we're good
-                                log_info("PID file has been removed by the process");
-                                return 0;
-                            }
-                            // Some other error, continue waiting
-                        } else {
-                            // Try to lock the file
-                            if (lockf(test_fd, F_TLOCK, 0) == 0) {
-                                // We got the lock, which means the previous process released it
-                                close(test_fd);
-                                log_info("PID file lock released");
-                                remove_daemon_pid_file(file_path);
-                                return 0;
-                            }
-                            close(test_fd);
-                        }
-                        usleep(100000); // 100ms
-                    }
-                    
-                    // If we get here, the PID file still exists and is locked, or some other issue
-                    log_warn("Process terminated but PID file is still locked or inaccessible");
-                    // Try to remove it anyway
-                    remove_daemon_pid_file(file_path);
-                    return 0;
-                }
-            }
-            // Sleep for 100ms
-            usleep(100000);
-        }
-        
-        log_warn("Process did not terminate after SIGTERM, trying SIGKILL");
-    }
-
-    // If SIGTERM didn't work or timed out, use SIGKILL
-    log_info("Sending SIGKILL to process %d", pid);
-    if (kill(pid, SIGKILL) != 0) {
-        if (errno == ESRCH) {
-            // Process has terminated
-            log_info("Process %d has terminated", pid);
-            remove_daemon_pid_file(file_path);
-            return 0;
-        } else {
-            log_error("Failed to send SIGKILL to process %d: %s", pid, strerror(errno));
-            return -1;
-        }
-    }
-
-    // Wait for process to terminate after SIGKILL
-    for (int i = 0; i < 50; i++) {
-        if (kill(pid, 0) != 0) {
-            if (errno == ESRCH) {
-                // Process has terminated
-                log_info("Process %d has terminated after SIGKILL", pid);
-                
-                // Wait for PID file to be released
-                for (int j = 0; j < 10; j++) {
-                    // Check if PID file still exists
-                    if (access(file_path, F_OK) != 0) {
-                        // PID file doesn't exist anymore, we're good
-                        log_info("PID file has been removed");
-                        return 0;
-                    }
-                    usleep(100000); // 100ms
-                }
-                
-                // If we get here, the PID file still exists
-                log_warn("Process terminated but PID file still exists");
-                remove_daemon_pid_file(file_path);
-                return 0;
-            }
-        }
-        // Sleep for 100ms
-        usleep(100000);
-    }
-
-    log_error("Failed to terminate process %d", pid);
-    return -1;
-}
-
 // Get status of daemon
 int daemon_status(const char *pid_file) {
-    char file_path[256];
+    char file_path[MAX_PATH_LENGTH];
 
     if (pid_file) {
-        strncpy(file_path, pid_file, sizeof(file_path) - 1);
-        file_path[sizeof(file_path) - 1] = '\0';
+        safe_strcpy(file_path, pid_file, sizeof(file_path), 0);
     } else {
-        strncpy(file_path, pid_file_path, sizeof(file_path) - 1);
-        file_path[sizeof(file_path) - 1] = '\0';
+        safe_strcpy(file_path, pid_file_path, sizeof(file_path), 0);
     }
 
     // First try to open the file with exclusive locking
@@ -536,9 +363,8 @@ int daemon_status(const char *pid_file) {
     if (lockf(fd, F_TLOCK, 0) == 0) {
         // We got the lock, which means no other process has it
         // This is a stale PID file
-        close(fd);
         log_warn("Found stale PID file %s (not locked), removing it", file_path);
-        remove_daemon_pid_file(file_path);
+        remove_pid_file(fd, file_path);
         return 0;
     }
     
@@ -574,7 +400,7 @@ int daemon_status(const char *pid_file) {
             // Process is not running, but file is locked?
             // This is unusual, but could happen if the file is locked by another process
             log_warn("Found stale PID file %s (locked but process %d not running), removing it", file_path, pid);
-            remove_daemon_pid_file(file_path);
+            remove_pid_file(-1, file_path);
             return 0;
         } else {
             log_error("Failed to check process status: %s", strerror(errno));

@@ -20,6 +20,7 @@
 #include "video/detection_result.h"
 #include "video/zone_filter.h"
 #include "utils/memory.h"
+#include "utils/strings.h"
 
 #define MAX_MOTION_STREAMS MAX_STREAMS
 #define DEFAULT_SENSITIVITY 0.15f        // Lower sensitivity threshold (was 0.25)
@@ -241,8 +242,7 @@ static motion_stream_t *get_motion_stream(const char *stream_name) {
                 return NULL;
             }
             
-            strncpy(motion_streams[i]->stream_name, stream_name, MAX_STREAM_NAME - 1);
-            motion_streams[i]->stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(motion_streams[i]->stream_name, stream_name, MAX_STREAM_NAME, 0);
             
             // Initialize default values
             motion_streams[i]->sensitivity = DEFAULT_SENSITIVITY;
@@ -1401,8 +1401,7 @@ int detect_motion(const char *stream_name, const unsigned char *frame_data,
                 float bh = (float)(max_y - min_y + 1) / (float)gs;
 
                 int ri = result->count;
-                strncpy(result->detections[ri].label, MOTION_LABEL, MAX_LABEL_LENGTH - 1);
-                result->detections[ri].label[MAX_LABEL_LENGTH - 1] = '\0';
+                safe_strcpy(result->detections[ri].label, MOTION_LABEL, MAX_LABEL_LENGTH, 0);
                 result->detections[ri].confidence = conf;
                 result->detections[ri].x = bx;
                 result->detections[ri].y = by;
@@ -1416,8 +1415,7 @@ int detect_motion(const char *stream_name, const unsigned char *frame_data,
         } else {
             // Non-grid path: single full-frame detection
             result->count = 1;
-            strncpy(result->detections[0].label, MOTION_LABEL, MAX_LABEL_LENGTH - 1);
-            result->detections[0].label[MAX_LABEL_LENGTH - 1] = '\0';
+            safe_strcpy(result->detections[0].label, MOTION_LABEL, MAX_LABEL_LENGTH, 0);
             result->detections[0].confidence = motion_score;
             result->detections[0].x = 0.0f;
             result->detections[0].y = 0.0f;

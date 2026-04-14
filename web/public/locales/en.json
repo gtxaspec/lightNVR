@@ -951,6 +951,7 @@
   "settings.webInterface": "Web Interface Settings",
   "settings.pendingRestartLabel": "Pending restart:",
   "settings.webPort": "Web Port",
+  "settings.webBindIp": "Web Bind Address",
   "settings.threadPoolSize": "Thread Pool Size",
   "settings.requiresRestart": "requires restart",
   "settings.threadPoolPlaceholder": "Default: 2× CPU cores",

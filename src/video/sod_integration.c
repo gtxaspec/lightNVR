@@ -12,6 +12,7 @@
 
 #include "../../include/core/logger.h"
 #include "../../include/core/config.h"
+#include "../../include/utils/strings.h"
 #include "../../include/video/detection.h"
 #include "../../include/video/detection_result.h"
 #include "../../include/video/sod_integration.h"
@@ -100,7 +101,7 @@ void* load_sod_model_for_detection(const char *model_path, float threshold,
                              model_path);
                     if (file_exists(alt_path)) {
                         log_info("Found model at alternative location: %s", alt_path);
-                        strncpy(full_model_path, alt_path, max_path_length - 1);
+                        safe_strcpy(full_model_path, alt_path, max_path_length, 0);
                         break;
                     }
                 }
@@ -108,7 +109,7 @@ void* load_sod_model_for_detection(const char *model_path, float threshold,
         }
     } else {
         // Already an absolute path
-        strncpy(full_model_path, model_path, max_path_length - 1);
+        safe_strcpy(full_model_path, model_path, max_path_length, 0);
     }
 
     log_info("Using model path: %s", full_model_path);

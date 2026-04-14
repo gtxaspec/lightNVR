@@ -37,6 +37,7 @@ char* create_json_string(const config_t *config) {
     cJSON_AddNumberToObject(json, "retention", config->retention_days);
     cJSON_AddBoolToObject(json, "auto_delete", config->auto_delete_oldest);
     cJSON_AddNumberToObject(json, "web_port", config->web_port);
+    cJSON_AddStringToObject(json, "web_bind_ip", config->web_bind_ip);
     cJSON_AddBoolToObject(json, "auth_enabled", config->web_auth_enabled);
     cJSON_AddStringToObject(json, "username", config->web_username);
     cJSON_AddStringToObject(json, "password", "********"); // Don't include actual password

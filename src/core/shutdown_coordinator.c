@@ -11,6 +11,7 @@
 
 #include "core/logger.h"
 #include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
 
 // Global shutdown coordinator instance
 static shutdown_coordinator_t g_coordinator;
@@ -108,8 +109,7 @@ int register_component(const char *name, component_type_t type, void *context, i
 
     // Initialize the component slot
     component_info_t *component = &g_coordinator.components[slot];
-    strncpy(component->name, name, sizeof(component->name) - 1);
-    component->name[sizeof(component->name) - 1] = '\0';
+    safe_strcpy(component->name, name, sizeof(component->name), 0);
     component->type = type;
     atomic_store(&component->state, COMPONENT_RUNNING);
     component->context = context;

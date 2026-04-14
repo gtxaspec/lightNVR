@@ -22,6 +22,7 @@
 #define LOG_COMPONENT "MetricsAPI"
 #include "core/logger.h"
 #include "core/config.h"
+#include "utils/strings.h"
 
 /* ------------------------------------------------------------------ */
 /*  Growable buffer for Prometheus output                               */
@@ -146,7 +147,7 @@ void handle_get_metrics(const http_request_t *req, http_response_t *res) {
     int max = metrics_get_max_streams();
     if (max <= 0) {
         res->status_code = 503;
-        strncpy(res->content_type, "text/plain", sizeof(res->content_type));
+        safe_strcpy(res->content_type, "text/plain", sizeof(res->content_type), 0);
         http_response_set_body(res, "# Metrics subsystem not initialized\n");
         return;
     }
@@ -274,7 +275,7 @@ void handle_get_metrics(const http_request_t *req, http_response_t *res) {
 
     /* Send response */
     res->status_code = 200;
-    strncpy(res->content_type, "text/plain; version=0.0.4; charset=utf-8", sizeof(res->content_type) - 1);
+    safe_strcpy(res->content_type, "text/plain; version=0.0.4; charset=utf-8", sizeof(res->content_type), 0);
     http_response_set_body(res, buf.data ? buf.data : "");
 
     prom_buf_free(&buf);
@@ -312,11 +313,11 @@ void handle_post_player_telemetry(const http_request_t *req, http_response_t *re
 
     cJSON *item;
     if ((item = cJSON_GetObjectItem(json, "stream_name")) && cJSON_IsString(item))
-        strncpy(event.stream_name, item->valuestring, sizeof(event.stream_name) - 1);
+        safe_strcpy(event.stream_name, item->valuestring, sizeof(event.stream_name), 0);
     if ((item = cJSON_GetObjectItem(json, "session_id")) && cJSON_IsString(item))
-        strncpy(event.session_id, item->valuestring, sizeof(event.session_id) - 1);
+        safe_strcpy(event.session_id, item->valuestring, sizeof(event.session_id), 0);
     if ((item = cJSON_GetObjectItem(json, "transport")) && cJSON_IsString(item))
-        strncpy(event.transport, item->valuestring, sizeof(event.transport) - 1);
+        safe_strcpy(event.transport, item->valuestring, sizeof(event.transport), 0);
     if ((item = cJSON_GetObjectItem(json, "ttff_ms")) && cJSON_IsNumber(item))
         event.ttff_ms = item->valuedouble;
     if ((item = cJSON_GetObjectItem(json, "rebuffer_count")) && cJSON_IsNumber(item))

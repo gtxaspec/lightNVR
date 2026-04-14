@@ -31,6 +31,7 @@
 #include "web/httpd_utils.h"
 #include "web/request_response.h"
 #include "core/config.h"
+#include "utils/strings.h"
 #include "database/db_auth.h"
 #include "database/db_core.h"
 
@@ -42,9 +43,9 @@ extern config_t g_config;
 /* ---- header helper ---- */
 static void add_header(http_request_t *req, const char *name, const char *value) {
     if (req->num_headers >= MAX_HEADERS) return;
-    strncpy(req->headers[req->num_headers].name,  name,  127);
+    safe_strcpy(req->headers[req->num_headers].name,  name,  128, 0);
     req->headers[req->num_headers].name[127]  = '\0';
-    strncpy(req->headers[req->num_headers].value, value, 1023);
+    safe_strcpy(req->headers[req->num_headers].value, value, 1024, 0);
     req->headers[req->num_headers].value[1023] = '\0';
     req->num_headers++;
 }
@@ -218,7 +219,7 @@ void test_get_effective_client_ip_uses_peer_by_default(void) {
 
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.client_ip, "198.51.100.10", sizeof(req.client_ip) - 1);
+    safe_strcpy(req.client_ip, "198.51.100.10", sizeof(req.client_ip), 0);
     add_header(&req, "X-Forwarded-For", "192.0.2.25");
 
     char client_ip[64] = {0};
@@ -228,11 +229,11 @@ void test_get_effective_client_ip_uses_peer_by_default(void) {
 }
 
 void test_get_effective_client_ip_uses_forwarded_for_from_trusted_proxy(void) {
-    strncpy(g_config.trusted_proxy_cidrs, "127.0.0.1/32", sizeof(g_config.trusted_proxy_cidrs) - 1);
+    safe_strcpy(g_config.trusted_proxy_cidrs, "127.0.0.1/32", sizeof(g_config.trusted_proxy_cidrs), 0);
 
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.client_ip, "127.0.0.1", sizeof(req.client_ip) - 1);
+    safe_strcpy(req.client_ip, "127.0.0.1", sizeof(req.client_ip), 0);
     add_header(&req, "X-Forwarded-For", "198.51.100.44, 127.0.0.1");
 
     char client_ip[64] = {0};
@@ -242,12 +243,12 @@ void test_get_effective_client_ip_uses_forwarded_for_from_trusted_proxy(void) {
 }
 
 void test_get_effective_client_ip_uses_forwarded_for_from_comma_separated_trusted_proxies(void) {
-    strncpy(g_config.trusted_proxy_cidrs, "10.0.0.0/8, 127.0.0.1/32",
-            sizeof(g_config.trusted_proxy_cidrs) - 1);
+    safe_strcpy(g_config.trusted_proxy_cidrs, "10.0.0.0/8, 127.0.0.1/32",
+            sizeof(g_config.trusted_proxy_cidrs), 0);
 
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.client_ip, "127.0.0.1", sizeof(req.client_ip) - 1);
+    safe_strcpy(req.client_ip, "127.0.0.1", sizeof(req.client_ip), 0);
     add_header(&req, "X-Forwarded-For", "198.51.100.44, 127.0.0.1");
 
     char client_ip[64] = {0};
@@ -257,11 +258,11 @@ void test_get_effective_client_ip_uses_forwarded_for_from_comma_separated_truste
 }
 
 void test_get_effective_client_ip_ignores_forwarded_for_from_untrusted_proxy(void) {
-    strncpy(g_config.trusted_proxy_cidrs, "127.0.0.1/32", sizeof(g_config.trusted_proxy_cidrs) - 1);
+    safe_strcpy(g_config.trusted_proxy_cidrs, "127.0.0.1/32", sizeof(g_config.trusted_proxy_cidrs), 0);
 
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.client_ip, "198.51.100.10", sizeof(req.client_ip) - 1);
+    safe_strcpy(req.client_ip, "198.51.100.10", sizeof(req.client_ip), 0);
     add_header(&req, "X-Forwarded-For", "192.0.2.25");
 
     char client_ip[64] = {0};
@@ -422,7 +423,7 @@ void test_get_authenticated_user_allows_basic_auth_from_allowed_ip(void) {
     http_request_t req;
     http_request_init(&req);
     add_header(&req, "Authorization", "Basic dGVzdDpwYXNzd29yZDEyMw==");
-    strncpy(req.client_ip, "192.0.2.25", sizeof(req.client_ip) - 1);
+    safe_strcpy(req.client_ip, "192.0.2.25", sizeof(req.client_ip), 0);
 
     user_t user;
     memset(&user, 0, sizeof(user));
@@ -439,7 +440,7 @@ void test_get_authenticated_user_rejects_basic_auth_from_disallowed_ip(void) {
     http_request_t req;
     http_request_init(&req);
     add_header(&req, "Authorization", "Basic dGVzdDpwYXNzd29yZDEyMw==");
-    strncpy(req.client_ip, "198.51.100.25", sizeof(req.client_ip) - 1);
+    safe_strcpy(req.client_ip, "198.51.100.25", sizeof(req.client_ip), 0);
 
     user_t user;
     memset(&user, 0, sizeof(user));
@@ -460,8 +461,8 @@ void test_get_authenticated_user_rejects_session_from_disallowed_ip(void) {
     char cookie[160] = {0};
     snprintf(cookie, sizeof(cookie), "session=%s", token);
     add_header(&req, "Cookie", cookie);
-    strncpy(req.client_ip, "198.51.100.10", sizeof(req.client_ip) - 1);
-    strncpy(req.user_agent, "TestAgent", sizeof(req.user_agent) - 1);
+    safe_strcpy(req.client_ip, "198.51.100.10", sizeof(req.client_ip), 0);
+    safe_strcpy(req.user_agent, "TestAgent", sizeof(req.user_agent), 0);
 
     user_t user;
     memset(&user, 0, sizeof(user));
@@ -476,13 +477,13 @@ void test_get_authenticated_user_allows_api_key_from_trusted_forwarded_ip(void) 
 
     char api_key[64] = {0};
     TEST_ASSERT_EQUAL_INT(0, db_auth_generate_api_key(uid, api_key, sizeof(api_key)));
-    strncpy(g_config.trusted_proxy_cidrs, "127.0.0.1/32", sizeof(g_config.trusted_proxy_cidrs) - 1);
+    safe_strcpy(g_config.trusted_proxy_cidrs, "127.0.0.1/32", sizeof(g_config.trusted_proxy_cidrs), 0);
 
     http_request_t req;
     http_request_init(&req);
     add_header(&req, "X-API-Key", api_key);
     add_header(&req, "X-Forwarded-For", "192.0.2.55, 127.0.0.1");
-    strncpy(req.client_ip, "127.0.0.1", sizeof(req.client_ip) - 1);
+    safe_strcpy(req.client_ip, "127.0.0.1", sizeof(req.client_ip), 0);
 
     user_t user;
     memset(&user, 0, sizeof(user));
@@ -500,13 +501,13 @@ void test_get_authenticated_user_rejects_api_key_with_spoofed_forwarded_ip_from_
     char auth_header[96] = {0};
     TEST_ASSERT_EQUAL_INT(0, db_auth_generate_api_key(uid, api_key, sizeof(api_key)));
     snprintf(auth_header, sizeof(auth_header), "Bearer %s", api_key);
-    strncpy(g_config.trusted_proxy_cidrs, "127.0.0.1/32", sizeof(g_config.trusted_proxy_cidrs) - 1);
+    safe_strcpy(g_config.trusted_proxy_cidrs, "127.0.0.1/32", sizeof(g_config.trusted_proxy_cidrs), 0);
 
     http_request_t req;
     http_request_init(&req);
     add_header(&req, "Authorization", auth_header);
     add_header(&req, "X-Forwarded-For", "192.0.2.55");
-    strncpy(req.client_ip, "198.51.100.10", sizeof(req.client_ip) - 1);
+    safe_strcpy(req.client_ip, "198.51.100.10", sizeof(req.client_ip), 0);
 
     user_t user;
     memset(&user, 0, sizeof(user));

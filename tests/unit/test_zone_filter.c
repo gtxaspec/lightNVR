@@ -18,12 +18,13 @@
 #include <sqlite3.h>
 
 #include "unity.h"
+#include "core/config.h"
+#include "utils/strings.h"
 #include "database/db_core.h"
 #include "database/db_zones.h"
 #include "database/db_streams.h"
 #include "video/zone_filter.h"
 #include "video/detection_result.h"
-#include "core/config.h"
 
 #define TEST_DB_PATH "/tmp/lightnvr_unit_zone_filter_test.db"
 
@@ -34,7 +35,7 @@ static detection_result_t make_result_1det(const char *label, float x, float y,
     detection_result_t r;
     memset(&r, 0, sizeof(r));
     r.count = 1;
-    strncpy(r.detections[0].label, label, MAX_LABEL_LENGTH - 1);
+    safe_strcpy(r.detections[0].label, label, MAX_LABEL_LENGTH, 0);
     r.detections[0].x          = x;
     r.detections[0].y          = y;
     r.detections[0].width      = w;
@@ -50,13 +51,13 @@ static detection_zone_t make_square_zone(const char *stream, const char *name,
                                          float min_conf) {
     detection_zone_t z;
     memset(&z, 0, sizeof(z));
-    strncpy(z.id,          "zone-test-1",  sizeof(z.id) - 1);
-    strncpy(z.stream_name, stream,         sizeof(z.stream_name) - 1);
-    strncpy(z.name,        name,           sizeof(z.name) - 1);
+    safe_strcpy(z.id,          "zone-test-1",  sizeof(z.id), 0);
+    safe_strcpy(z.stream_name, stream,         sizeof(z.stream_name), 0);
+    safe_strcpy(z.name,        name,           sizeof(z.name), 0);
     z.enabled       = enabled;
     z.min_confidence = min_conf;
     if (classes)
-        strncpy(z.filter_classes, classes, sizeof(z.filter_classes) - 1);
+        safe_strcpy(z.filter_classes, classes, sizeof(z.filter_classes), 0);
     /* Square polygon: TL→TR→BR→BL */
     z.polygon[0] = (zone_point_t){0.0f, 0.0f};
     z.polygon[1] = (zone_point_t){0.5f, 0.0f};
@@ -69,8 +70,8 @@ static detection_zone_t make_square_zone(const char *stream, const char *name,
 static void ensure_stream(const char *name) {
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, name, sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://localhost/test", sizeof(s.url) - 1);
+    safe_strcpy(s.name, name, sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://localhost/test", sizeof(s.url), 0);
     s.enabled  = true;
     s.width    = 1920;
     s.height   = 1080;
@@ -232,12 +233,12 @@ void test_stream_object_include_keeps_matching_label(void) {
     /* Insert stream with include filter */
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, "cam_inc", sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://localhost/inc", sizeof(s.url) - 1);
+    safe_strcpy(s.name, "cam_inc", sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://localhost/inc", sizeof(s.url), 0);
     s.enabled = true; s.width = 1920; s.height = 1080; s.fps = 30;
     s.protocol = STREAM_PROTOCOL_TCP;
-    strncpy(s.detection_object_filter, "include", sizeof(s.detection_object_filter) - 1);
-    strncpy(s.detection_object_filter_list, "person,car", sizeof(s.detection_object_filter_list) - 1);
+    safe_strcpy(s.detection_object_filter, "include", sizeof(s.detection_object_filter), 0);
+    safe_strcpy(s.detection_object_filter_list, "person,car", sizeof(s.detection_object_filter_list), 0);
     add_stream_config(&s);
 
     detection_result_t r = make_result_1det("person", 0.1f, 0.1f, 0.1f, 0.1f, 0.9f);
@@ -248,12 +249,12 @@ void test_stream_object_include_keeps_matching_label(void) {
 void test_stream_object_include_drops_unmatched_label(void) {
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, "cam_inc2", sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://localhost/inc2", sizeof(s.url) - 1);
+    safe_strcpy(s.name, "cam_inc2", sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://localhost/inc2", sizeof(s.url), 0);
     s.enabled = true; s.width = 1920; s.height = 1080; s.fps = 30;
     s.protocol = STREAM_PROTOCOL_TCP;
-    strncpy(s.detection_object_filter, "include", sizeof(s.detection_object_filter) - 1);
-    strncpy(s.detection_object_filter_list, "person,car", sizeof(s.detection_object_filter_list) - 1);
+    safe_strcpy(s.detection_object_filter, "include", sizeof(s.detection_object_filter), 0);
+    safe_strcpy(s.detection_object_filter_list, "person,car", sizeof(s.detection_object_filter_list), 0);
     add_stream_config(&s);
 
     detection_result_t r = make_result_1det("bicycle", 0.1f, 0.1f, 0.1f, 0.1f, 0.9f);
@@ -268,12 +269,12 @@ void test_stream_object_include_drops_unmatched_label(void) {
 void test_stream_object_exclude_drops_matching_label(void) {
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, "cam_exc", sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://localhost/exc", sizeof(s.url) - 1);
+    safe_strcpy(s.name, "cam_exc", sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://localhost/exc", sizeof(s.url), 0);
     s.enabled = true; s.width = 1920; s.height = 1080; s.fps = 30;
     s.protocol = STREAM_PROTOCOL_TCP;
-    strncpy(s.detection_object_filter, "exclude", sizeof(s.detection_object_filter) - 1);
-    strncpy(s.detection_object_filter_list, "cat", sizeof(s.detection_object_filter_list) - 1);
+    safe_strcpy(s.detection_object_filter, "exclude", sizeof(s.detection_object_filter), 0);
+    safe_strcpy(s.detection_object_filter_list, "cat", sizeof(s.detection_object_filter_list), 0);
     add_stream_config(&s);
 
     detection_result_t r = make_result_1det("cat", 0.1f, 0.1f, 0.1f, 0.1f, 0.9f);
@@ -284,12 +285,12 @@ void test_stream_object_exclude_drops_matching_label(void) {
 void test_stream_object_exclude_keeps_unmatched_label(void) {
     stream_config_t s;
     memset(&s, 0, sizeof(s));
-    strncpy(s.name, "cam_exc2", sizeof(s.name) - 1);
-    strncpy(s.url, "rtsp://localhost/exc2", sizeof(s.url) - 1);
+    safe_strcpy(s.name, "cam_exc2", sizeof(s.name), 0);
+    safe_strcpy(s.url, "rtsp://localhost/exc2", sizeof(s.url), 0);
     s.enabled = true; s.width = 1920; s.height = 1080; s.fps = 30;
     s.protocol = STREAM_PROTOCOL_TCP;
-    strncpy(s.detection_object_filter, "exclude", sizeof(s.detection_object_filter) - 1);
-    strncpy(s.detection_object_filter_list, "cat", sizeof(s.detection_object_filter_list) - 1);
+    safe_strcpy(s.detection_object_filter, "exclude", sizeof(s.detection_object_filter), 0);
+    safe_strcpy(s.detection_object_filter_list, "cat", sizeof(s.detection_object_filter_list), 0);
     add_stream_config(&s);
 
     detection_result_t r = make_result_1det("dog", 0.1f, 0.1f, 0.1f, 0.1f, 0.9f);

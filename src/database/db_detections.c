@@ -13,6 +13,7 @@
 #include "database/db_detections.h"
 #include "database/db_core.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "video/detection_result.h"
 
 /**
@@ -329,10 +330,9 @@ int get_detections_from_db_time_range(const char *stream_name, detection_result_
         
         // Store in result
         if (label) {
-            strncpy(result->detections[count].label, label, MAX_LABEL_LENGTH - 1);
-            result->detections[count].label[MAX_LABEL_LENGTH - 1] = '\0';
+            safe_strcpy(result->detections[count].label, label, MAX_LABEL_LENGTH, 0);
         } else {
-            strncpy(result->detections[count].label, "unknown", MAX_LABEL_LENGTH - 1);
+            safe_strcpy(result->detections[count].label, "unknown", MAX_LABEL_LENGTH, 0);
         }
         
         result->detections[count].confidence = confidence;
@@ -704,8 +704,7 @@ int get_detection_labels_summary(const char *stream_name, time_t start_time, tim
         int label_count = sqlite3_column_int(stmt, 1);
 
         if (label) {
-            strncpy(labels[count].label, label, MAX_LABEL_LENGTH - 1);
-            labels[count].label[MAX_LABEL_LENGTH - 1] = '\0';
+            safe_strcpy(labels[count].label, label, MAX_LABEL_LENGTH, 0);
             labels[count].count = label_count;
             count++;
         }
@@ -766,8 +765,7 @@ int get_all_unique_detection_labels(char labels[][MAX_LABEL_LENGTH], int max_lab
         const char *label = (const char *)sqlite3_column_text(stmt, 0);
 
         if (label) {
-            strncpy(labels[count], label, MAX_LABEL_LENGTH - 1);
-            labels[count][MAX_LABEL_LENGTH - 1] = '\0';
+            safe_strcpy(labels[count], label, MAX_LABEL_LENGTH, 0);
             count++;
         }
     }

@@ -28,6 +28,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/url_utils.h"
+#include "utils/strings.h"
 
 // go2rtc session state
 typedef struct {
@@ -118,16 +119,15 @@ static int go2rtc_init_session(go2rtc_strategy_data_t *data) {
         const char *id_end = strchr(id_start, '\n');
         if (!id_end) id_end = strchr(id_start, '\r');
         if (!id_end) id_end = id_start + strlen(id_start);
+        // Remove any trailing whitespace
+        id_end = rtrim_pos(id_start, id_end - id_start);
         
         size_t id_len = id_end - id_start;
         if (id_len > 0 && id_len < sizeof(data->session_id)) {
-            strncpy(data->session_id, id_start, id_len);
-            data->session_id[id_len] = '\0';
-            // Remove any trailing whitespace or query params
+            safe_strcpy(data->session_id, id_start, sizeof(data->session_id), id_len);
+            // Remove query params
             char *amp = strchr(data->session_id, '&');
             if (amp) *amp = '\0';
-            char *ws = strchr(data->session_id, ' ');
-            if (ws) *ws = '\0';
         }
     }
     
@@ -190,7 +190,7 @@ static int go2rtc_strategy_init(pre_buffer_strategy_t *self, const buffer_config
     go2rtc_strategy_data_t *data = (go2rtc_strategy_data_t *)self->private_data;
 
     if (config->go2rtc_url && config->go2rtc_url[0]) {
-        strncpy(data->go2rtc_url, config->go2rtc_url, sizeof(data->go2rtc_url) - 1);
+        safe_strcpy(data->go2rtc_url, config->go2rtc_url, sizeof(data->go2rtc_url), 0);
     } else {
         // Default to localhost
         snprintf(data->go2rtc_url, sizeof(data->go2rtc_url),
@@ -392,11 +392,11 @@ pre_buffer_strategy_t* create_go2rtc_strategy(const char *stream_name,
         return NULL;
     }
 
-    strncpy(data->stream_name, stream_name, sizeof(data->stream_name) - 1);
+    safe_strcpy(data->stream_name, stream_name, sizeof(data->stream_name), 0);
 
     strategy->name = "go2rtc_native";
     strategy->type = BUFFER_STRATEGY_GO2RTC_NATIVE;
-    strncpy(strategy->stream_name, stream_name, sizeof(strategy->stream_name) - 1);
+    safe_strcpy(strategy->stream_name, stream_name, sizeof(strategy->stream_name), 0);
     strategy->private_data = data;
 
     // Set interface methods

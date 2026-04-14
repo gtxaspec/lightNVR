@@ -1,17 +1,19 @@
-#include "video/onvif_device_management.h"
-#include "video/onvif_soap.h"
-#include "video/stream_manager.h"
-#include "core/logger.h"
-#include "database/db_streams.h"
-#include "video/stream_protocol.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <curl/curl.h>
-#include "ezxml.h"
 #include <libavformat/avformat.h>
+
+#include "ezxml.h"
+#include "video/onvif_device_management.h"
+#include "video/onvif_soap.h"
+#include "video/stream_manager.h"
+#include "core/logger.h"
 #include "core/url_utils.h"
+#include "utils/strings.h"
+#include "database/db_streams.h"
+#include "video/stream_protocol.h"
 
 // Structure to store memory for CURL responses
 typedef struct {
@@ -168,8 +170,8 @@ static char* send_soap_request(const char *device_url, const char *soap_action, 
     // Log response if available
     if (response) {
         // Log first 200 characters of response for debugging
-        char debug_response[201] = {0};
-        strncpy(debug_response, response, 200);
+        char debug_response[201];
+        safe_strcpy(debug_response, response, 201, 0);
         log_info("Response (first 200 chars): %s", debug_response);
     }
     
@@ -285,8 +287,7 @@ static char* get_media_service_url(const char *device_url, const char *username,
                         media_url = strdup(ezxml_txt(xaddr));
                         char safe_media_url[MAX_URL_LENGTH];
                         if (url_redact_for_logging(media_url, safe_media_url, sizeof(safe_media_url)) != 0) {
-                            strncpy(safe_media_url, "[invalid-url]", sizeof(safe_media_url) - 1);
-                            safe_media_url[sizeof(safe_media_url) - 1] = '\0';
+                            safe_strcpy(safe_media_url, "[invalid-url]", sizeof(safe_media_url), 0);
                         }
                         log_info("Found media service URL: %s", safe_media_url);
                         break;
@@ -317,13 +318,12 @@ static char* get_media_service_url(const char *device_url, const char *username,
                 size_t prefix_len = media_path - device_url;
                 media_url = malloc(prefix_len + strlen("/onvif/media_service") + 1);
                 if (media_url) {
-                    strncpy(media_url, device_url, prefix_len);
-                    media_url[prefix_len] = '\0';
-                    strncat(media_url, "/onvif/media_service", strlen("/onvif/media_service"));
+                    memcpy(media_url, device_url, prefix_len);
+                    // Copies null terminator
+                    memcpy(media_url + prefix_len, "/onvif/media_service", sizeof("/onvif/media_service"));
                     char safe_media_url[MAX_URL_LENGTH];
                     if (url_redact_for_logging(media_url, safe_media_url, sizeof(safe_media_url)) != 0) {
-                        strncpy(safe_media_url, "[invalid-url]", sizeof(safe_media_url) - 1);
-                        safe_media_url[sizeof(safe_media_url) - 1] = '\0';
+                        safe_strcpy(safe_media_url, "[invalid-url]", sizeof(safe_media_url), 0);
                     }
                     log_info("Created fallback media URL: %s", safe_media_url);
                 }
@@ -332,8 +332,7 @@ static char* get_media_service_url(const char *device_url, const char *username,
                 media_url = strdup(device_url);
                 char safe_media_url[MAX_URL_LENGTH];
                 if (url_redact_for_logging(media_url, safe_media_url, sizeof(safe_media_url)) != 0) {
-                    strncpy(safe_media_url, "[invalid-url]", sizeof(safe_media_url) - 1);
-                    safe_media_url[sizeof(safe_media_url) - 1] = '\0';
+                    safe_strcpy(safe_media_url, "[invalid-url]", sizeof(safe_media_url), 0);
                 }
                 log_info("Using device URL as media URL: %s", safe_media_url);
             }
@@ -360,12 +359,10 @@ int get_onvif_device_profiles(const char *device_url, const char *username,
     char safe_device_url[MAX_URL_LENGTH];
     char safe_media_url[MAX_URL_LENGTH];
     if (url_redact_for_logging(device_url, safe_device_url, sizeof(safe_device_url)) != 0) {
-        strncpy(safe_device_url, "[invalid-url]", sizeof(safe_device_url) - 1);
-        safe_device_url[sizeof(safe_device_url) - 1] = '\0';
+        safe_strcpy(safe_device_url, "[invalid-url]", sizeof(safe_device_url), 0);
     }
     if (url_redact_for_logging(media_url, safe_media_url, sizeof(safe_media_url)) != 0) {
-        strncpy(safe_media_url, "[invalid-url]", sizeof(safe_media_url) - 1);
-        safe_media_url[sizeof(safe_media_url) - 1] = '\0';
+        safe_strcpy(safe_media_url, "[invalid-url]", sizeof(safe_media_url), 0);
     }
     log_info("Getting profiles for ONVIF device: %s (Media URL: %s)", safe_device_url, safe_media_url);
     
@@ -420,15 +417,13 @@ int get_onvif_device_profiles(const char *device_url, const char *username,
         // Get profile token
         const char *token = ezxml_attr(profile, "token");
         if (token) {
-            strncpy(profiles[i].token, token, sizeof(profiles[i].token) - 1);
-            profiles[i].token[sizeof(profiles[i].token) - 1] = '\0';
+            safe_strcpy(profiles[i].token, token, sizeof(profiles[i].token), 0);
         }
         
         // Get profile name
         ezxml_t name = find_child(profile, "tt:Name");
         if (name) {
-            strncpy(profiles[i].name, ezxml_txt(name), sizeof(profiles[i].name) - 1);
-            profiles[i].name[sizeof(profiles[i].name) - 1] = '\0';
+            safe_strcpy(profiles[i].name, ezxml_txt(name), sizeof(profiles[i].name), 0);
         }
         
         // Get video encoder configuration
@@ -436,8 +431,7 @@ int get_onvif_device_profiles(const char *device_url, const char *username,
         if (video_encoder) {
             ezxml_t encoding = find_child(video_encoder, "tt:Encoding");
             if (encoding) {
-                strncpy(profiles[i].encoding, ezxml_txt(encoding), sizeof(profiles[i].encoding) - 1);
-                profiles[i].encoding[sizeof(profiles[i].encoding) - 1] = '\0';
+                safe_strcpy(profiles[i].encoding, ezxml_txt(encoding), sizeof(profiles[i].encoding), 0);
             }
             
             ezxml_t resolution = find_child(video_encoder, "tt:Resolution");
@@ -492,8 +486,7 @@ int get_onvif_stream_url(const char *device_url, const char *username,
     
     char safe_device_url[MAX_URL_LENGTH];
     if (url_redact_for_logging(device_url, safe_device_url, sizeof(safe_device_url)) != 0) {
-        strncpy(safe_device_url, "[invalid-url]", sizeof(safe_device_url) - 1);
-        safe_device_url[sizeof(safe_device_url) - 1] = '\0';
+        safe_strcpy(safe_device_url, "[invalid-url]", sizeof(safe_device_url), 0);
     }
     log_info("Getting stream URL for ONVIF device: %s, profile: %s", safe_device_url, profile_token);
     
@@ -554,15 +547,13 @@ int get_onvif_stream_url(const char *device_url, const char *username,
     {
         char safe_uri[MAX_URL_LENGTH];
         if (url_redact_for_logging(uri, safe_uri, sizeof(safe_uri)) != 0) {
-            strncpy(safe_uri, "[invalid-url]", sizeof(safe_uri) - 1);
-            safe_uri[sizeof(safe_uri) - 1] = '\0';
+            safe_strcpy(safe_uri, "[invalid-url]", sizeof(safe_uri), 0);
         }
         log_info("Got stream URI: %s", safe_uri);
     }
     
     // Copy the URI to the output parameter
-    strncpy(stream_url, uri, url_size - 1);
-    stream_url[url_size - 1] = '\0';
+    safe_strcpy(stream_url, uri, url_size, 0);
     
     (void)username;
     (void)password;
@@ -591,13 +582,11 @@ int add_onvif_device_as_stream(const onvif_device_info_t *device_info,
     memset(&config, 0, sizeof(config));
     
     // Set stream name
-    strncpy(config.name, stream_name, MAX_STREAM_NAME - 1);
-    config.name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(config.name, stream_name, MAX_STREAM_NAME, 0);
     
     // Store the raw stream URL and keep credentials in dedicated ONVIF fields.
     if (url_strip_credentials(profile->stream_uri, config.url, sizeof(config.url)) != 0) {
-        strncpy(config.url, profile->stream_uri, MAX_URL_LENGTH - 1);
-        config.url[MAX_URL_LENGTH - 1] = '\0';
+        safe_strcpy(config.url, profile->stream_uri, MAX_URL_LENGTH, 0);
     }
     
     // Set stream parameters
@@ -608,15 +597,14 @@ int add_onvif_device_as_stream(const onvif_device_info_t *device_info,
     
     // Set codec - convert ONVIF encoding format to our format
     if (strcasecmp(profile->encoding, "H264") == 0) {
-        strncpy(config.codec, "h264", sizeof(config.codec) - 1);
+        safe_strcpy(config.codec, "h264", sizeof(config.codec), 0);
     } else if (strcasecmp(profile->encoding, "H265") == 0) {
-        strncpy(config.codec, "h265", sizeof(config.codec) - 1);
+        safe_strcpy(config.codec, "h265", sizeof(config.codec), 0);
     } else {
         // Default to h264 if unknown
-        strncpy(config.codec, "h264", sizeof(config.codec) - 1);
+        safe_strcpy(config.codec, "h264", sizeof(config.codec), 0);
         log_warn("Unknown encoding format '%s', defaulting to h264", profile->encoding);
     }
-    config.codec[sizeof(config.codec) - 1] = '\0';
     
     // Set default values
     config.priority = 5;
@@ -630,8 +618,7 @@ int add_onvif_device_as_stream(const onvif_device_info_t *device_info,
     config.streaming_enabled = true;  // Enable live streaming by default
     
     // Set default detection model to "motion" which doesn't require a separate model file
-    strncpy(config.detection_model, "motion", sizeof(config.detection_model) - 1);
-    config.detection_model[sizeof(config.detection_model) - 1] = '\0';
+    safe_strcpy(config.detection_model, "motion", sizeof(config.detection_model), 0);
     
     // Set protocol to TCP or UDP based on URL (most ONVIF cameras use TCP/RTSP)
     config.protocol = STREAM_PROTOCOL_TCP;
@@ -646,16 +633,14 @@ int add_onvif_device_as_stream(const onvif_device_info_t *device_info,
     
     // Set ONVIF-specific fields
     if (username) {
-        strncpy(config.onvif_username, username, sizeof(config.onvif_username) - 1);
-        config.onvif_username[sizeof(config.onvif_username) - 1] = '\0';
+        safe_strcpy(config.onvif_username, username, sizeof(config.onvif_username), 0);
         
         // For onvif_simple_server compatibility, log the username
         log_info("Setting ONVIF username for stream %s: %s", stream_name, username);
     }
     
     if (password) {
-        strncpy(config.onvif_password, password, sizeof(config.onvif_password) - 1);
-        config.onvif_password[sizeof(config.onvif_password) - 1] = '\0';
+        safe_strcpy(config.onvif_password, password, sizeof(config.onvif_password), 0);
         
         // For onvif_simple_server compatibility, log that we have a password
         log_info("Setting ONVIF password for stream %s", stream_name);
@@ -664,14 +649,12 @@ int add_onvif_device_as_stream(const onvif_device_info_t *device_info,
     {
         char safe_url[MAX_URL_LENGTH];
         if (url_redact_for_logging(config.url, safe_url, sizeof(safe_url)) != 0) {
-            strncpy(safe_url, "[invalid-url]", sizeof(safe_url) - 1);
-            safe_url[sizeof(safe_url) - 1] = '\0';
+            safe_strcpy(safe_url, "[invalid-url]", sizeof(safe_url), 0);
         }
         log_info("Using ONVIF stream URI without embedded credentials: %s", safe_url);
     }
     
-    strncpy(config.onvif_profile, profile->token, sizeof(config.onvif_profile) - 1);
-    config.onvif_profile[sizeof(config.onvif_profile) - 1] = '\0';
+    safe_strcpy(config.onvif_profile, profile->token, sizeof(config.onvif_profile), 0);
     
     config.onvif_discovery_enabled = true;
     
@@ -704,8 +687,7 @@ int test_onvif_connection(const char *url, const char *username, const char *pas
     // Attempt to get device profiles as a way to test the connection
     char safe_device_url[MAX_URL_LENGTH];
     if (url_redact_for_logging(url, safe_device_url, sizeof(safe_device_url)) != 0) {
-        strncpy(safe_device_url, "[invalid-url]", sizeof(safe_device_url) - 1);
-        safe_device_url[sizeof(safe_device_url) - 1] = '\0';
+        safe_strcpy(safe_device_url, "[invalid-url]", sizeof(safe_device_url), 0);
     }
     log_info("Testing connection to ONVIF device: %s", safe_device_url);
     
@@ -728,13 +710,11 @@ int test_onvif_connection(const char *url, const char *username, const char *pas
                                   (username && strlen(username) > 0) ? username : NULL,
                                   (password && strlen(password) > 0) ? password : NULL,
                                   stream_url, sizeof(stream_url)) != 0) {
-            strncpy(stream_url, profiles[0].stream_uri, sizeof(stream_url) - 1);
-            stream_url[sizeof(stream_url) - 1] = '\0';
+            safe_strcpy(stream_url, profiles[0].stream_uri, sizeof(stream_url), 0);
         }
 
         if (url_redact_for_logging(stream_url, safe_stream_url, sizeof(safe_stream_url)) != 0) {
-            strncpy(safe_stream_url, "[invalid-url]", sizeof(safe_stream_url) - 1);
-            safe_stream_url[sizeof(safe_stream_url) - 1] = '\0';
+            safe_strcpy(safe_stream_url, "[invalid-url]", sizeof(safe_stream_url), 0);
         }
 
         log_info("Testing stream connection for profile: %s, URI: %s",

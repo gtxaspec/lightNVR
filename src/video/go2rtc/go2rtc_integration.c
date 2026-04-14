@@ -7,6 +7,15 @@
  * - Process-level health (restarting go2rtc when it becomes unresponsive)
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <cjson/cJSON.h>
+#include <curl/curl.h>
+
 #include "video/go2rtc/go2rtc_integration.h"
 #include "video/go2rtc/go2rtc_consumer.h"
 #include "video/go2rtc/go2rtc_stream.h"
@@ -16,6 +25,7 @@
 #include "core/config.h"
 #include "core/url_utils.h"
 #include "core/shutdown_coordinator.h"  // For is_shutdown_initiated
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/mp4_recording.h"
 #include "video/hls/hls_api.h"
@@ -23,15 +33,6 @@
 #include "database/db_streams.h"
 #include "video/stream_state.h"
 #include "video/unified_detection_thread.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <stdatomic.h>
-#include <cjson/cJSON.h>
-#include <curl/curl.h>
 
 // Tracking for streams using go2rtc
 #define MAX_TRACKED_STREAMS MAX_STREAMS
@@ -152,7 +153,7 @@ static stuck_stream_tracker_t *get_or_create_stuck_tracker(const char *stream_na
     for (int i = 0; i < MAX_TRACKED_STREAMS; i++) {
         if (!g_stuck_trackers[i].tracking_active) {
             memset(&g_stuck_trackers[i], 0, sizeof(stuck_stream_tracker_t));
-            strncpy(g_stuck_trackers[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
+            safe_strcpy(g_stuck_trackers[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
             g_stuck_trackers[i].tracking_active = true;
             g_stuck_trackers[i].last_bytes_recv = -1;  // -1 = not yet initialized
             g_stuck_trackers[i].last_bytes_send = -1;
@@ -340,17 +341,10 @@ static void save_original_config(const char *stream_name, const char *url,
                                 const char *username, const char *password) {
     for (int i = 0; i < MAX_TRACKED_STREAMS; i++) {
         if (g_original_configs[i].stream_name[0] == '\0') {
-            strncpy(g_original_configs[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
-            g_original_configs[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
-
-            strncpy(g_original_configs[i].original_url, url, MAX_PATH_LENGTH - 1);
-            g_original_configs[i].original_url[MAX_PATH_LENGTH - 1] = '\0';
-
-            strncpy(g_original_configs[i].original_username, username, MAX_STREAM_NAME - 1);
-            g_original_configs[i].original_username[MAX_STREAM_NAME - 1] = '\0';
-
-            strncpy(g_original_configs[i].original_password, password, MAX_STREAM_NAME - 1);
-            g_original_configs[i].original_password[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(g_original_configs[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
+            safe_strcpy(g_original_configs[i].original_url, url, MAX_PATH_LENGTH, 0);
+            safe_strcpy(g_original_configs[i].original_username, username, MAX_STREAM_NAME, 0);
+            safe_strcpy(g_original_configs[i].original_password, password, MAX_STREAM_NAME, 0);
 
             return;
         }
@@ -376,14 +370,9 @@ static bool get_original_config(const char *stream_name, char *url, size_t url_s
         if (g_original_configs[i].stream_name[0] != '\0' &&
             strcmp(g_original_configs[i].stream_name, stream_name) == 0) {
 
-            strncpy(url, g_original_configs[i].original_url, url_size - 1);
-            url[url_size - 1] = '\0';
-
-            strncpy(username, g_original_configs[i].original_username, username_size - 1);
-            username[username_size - 1] = '\0';
-
-            strncpy(password, g_original_configs[i].original_password, password_size - 1);
-            password[password_size - 1] = '\0';
+            safe_strcpy(url, g_original_configs[i].original_url, url_size, 0);
+            safe_strcpy(username, g_original_configs[i].original_username, username_size, 0);
+            safe_strcpy(password, g_original_configs[i].original_password, password_size, 0);
 
             // Clear the entry
             g_original_configs[i].stream_name[0] = '\0';
@@ -427,8 +416,7 @@ static go2rtc_stream_tracking_t *add_tracked_stream(const char *stream_name) {
     // Find an empty slot
     for (int i = 0; i < MAX_TRACKED_STREAMS; i++) {
         if (g_tracked_streams[i].stream_name[0] == '\0') {
-            strncpy(g_tracked_streams[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
-            g_tracked_streams[i].stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(g_tracked_streams[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
             g_tracked_streams[i].using_go2rtc_for_recording = false;
             g_tracked_streams[i].using_go2rtc_for_hls = false;
             return &g_tracked_streams[i];
@@ -1797,10 +1785,10 @@ bool go2rtc_integration_register_stream(const char *stream_name) {
     char password[64] = {0};
 
     if (config.onvif_username[0] != '\0') {
-        strncpy(username, config.onvif_username, sizeof(username) - 1);
+        safe_strcpy(username, config.onvif_username, sizeof(username), 0);
     }
     if (config.onvif_password[0] != '\0') {
-        strncpy(password, config.onvif_password, sizeof(password) - 1);
+        safe_strcpy(password, config.onvif_password, sizeof(password), 0);
     }
 
     // If credentials not in onvif fields, try to extract from URL
@@ -1815,15 +1803,13 @@ bool go2rtc_integration_register_stream(const char *stream_name) {
                     // Extract username
                     size_t username_len = colon - (url + 7);
                     if (username_len < sizeof(username)) {
-                        strncpy(username, url + 7, username_len);
-                        username[username_len] = '\0';
+                        safe_strcpy(username, url + 7, sizeof(username), username_len);
 
                         // Extract password if not already set
                         if (password[0] == '\0') {
                             size_t password_len = at_sign - (colon + 1);
                             if (password_len < sizeof(password)) {
-                                strncpy(password, colon + 1, password_len);
-                                password[password_len] = '\0';
+                                safe_strcpy(password, colon + 1, sizeof(password), password_len);
                             }
                         }
                     }

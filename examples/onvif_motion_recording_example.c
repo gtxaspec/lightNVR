@@ -30,8 +30,8 @@ void example_enable_motion_recording(void) {
     };
     
     // Set codec and quality
-    strncpy(config.codec, "h264", sizeof(config.codec) - 1);
-    strncpy(config.quality, "high", sizeof(config.quality) - 1);
+    safe_strcpy(config.codec, "h264", sizeof(config.codec), 0);
+    safe_strcpy(config.quality, "high", sizeof(config.quality), 0);
     
     // Enable for a stream
     const char *stream_name = "front_door";
@@ -115,7 +115,7 @@ void example_check_status(void) {
     }
     
     // Get current recording path
-    char path[512];
+    char path[MAX_PATH_LENGTH];
     if (get_current_motion_recording_path(stream_name, path, sizeof(path)) == 0) {
         printf("Current recording: %s\n", path);
     } else {
@@ -140,8 +140,8 @@ void example_update_configuration(void) {
         .retention_days = 60          // Increased to 60 days
     };
     
-    strncpy(new_config.codec, "h265", sizeof(new_config.codec) - 1);
-    strncpy(new_config.quality, "medium", sizeof(new_config.quality) - 1);
+    safe_strcpy(new_config.codec, "h265", sizeof(new_config.codec), 0);
+    safe_strcpy(new_config.quality, "medium", sizeof(new_config.quality), 0);
     
     int result = update_motion_recording_config(stream_name, &new_config);
     
@@ -199,8 +199,8 @@ void example_multiple_cameras(void) {
             .retention_days = 30
         };
         
-        strncpy(config.codec, "h264", sizeof(config.codec) - 1);
-        strncpy(config.quality, "high", sizeof(config.quality) - 1);
+        safe_strcpy(config.codec, "h264", sizeof(config.codec), 0);
+        safe_strcpy(config.quality, "high", sizeof(config.quality), 0);
         
         int result = enable_motion_recording(cameras[i], &config);
         

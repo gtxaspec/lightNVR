@@ -10,6 +10,7 @@
 
 #include "video/onvif_soap.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 #include "ezxml.h"
 
 #include <stdio.h>
@@ -155,7 +156,7 @@ static ezxml_t find_with_ns(ezxml_t parent, const char *local_name,
     return ezxml_child(parent, local_name);
 }
 
-void onvif_log_soap_fault(char *response, size_t response_len, const char *context) {
+void onvif_log_soap_fault(const char *response, size_t response_len, const char *context) {
     if (!response || response_len == 0) return;
 
     const char *ctx = context ? context : "ONVIF";

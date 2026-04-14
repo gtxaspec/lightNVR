@@ -37,6 +37,7 @@
 #include "core/config.h"
 #include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
 #include "video/unified_detection_thread.h"
 #include "video/packet_buffer.h"
 #include "video/detection.h"
@@ -418,7 +419,6 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
         return -1;
     }
 
-    log_error("Unified detection system not initialized! Address of system_initialized: %p, value: %d", (void*)&system_initialized, system_initialized);
     if (!system_initialized) {
         log_error("Unified detection system not initialized");
         return -1;
@@ -469,8 +469,8 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
     config_t *global_cfg = get_streaming_config();
 
     // Initialize context
-    strncpy(ctx->stream_name, stream_name, sizeof(ctx->stream_name) - 1);
-    strncpy(ctx->model_path, model_path, sizeof(ctx->model_path) - 1);
+    safe_strcpy(ctx->stream_name, stream_name, sizeof(ctx->stream_name), 0);
+    safe_strcpy(ctx->model_path, model_path, sizeof(ctx->model_path), 0);
     ctx->detection_threshold = threshold;
     ctx->pre_buffer_seconds = pre_buffer_seconds > 0 ? pre_buffer_seconds : 10;
     ctx->post_buffer_seconds = post_buffer_seconds > 0 ? post_buffer_seconds : 5;
@@ -479,6 +479,7 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
     ctx->detection_interval = config.detection_interval > 0 ? config.detection_interval : DEFAULT_DETECTION_INTERVAL;
     ctx->record_audio = config.record_audio;
     ctx->annotation_only = annotation_only;
+    atomic_store(&ctx->external_motion_trigger, 0);  // no pending external trigger
 
     // Initialize to current time to avoid large elapsed time on first detection check
     atomic_store(&ctx->last_detection_check_time, (long long)time(NULL));
@@ -494,7 +495,7 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
                                   config.onvif_username[0] ? config.onvif_username : NULL,
                                   config.onvif_password[0] ? config.onvif_password : NULL,
                                   ctx->rtsp_url, sizeof(ctx->rtsp_url)) != 0) {
-            strncpy(ctx->rtsp_url, config.url, sizeof(ctx->rtsp_url) - 1);
+            safe_strcpy(ctx->rtsp_url, config.url, sizeof(ctx->rtsp_url), 0);
         }
     }
 
@@ -506,7 +507,12 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
 
         snprintf(ctx->output_dir, sizeof(ctx->output_dir), "%s/%s",
                  global_cfg->storage_path, stream_path);
-        mkdir(ctx->output_dir, 0755);
+        if (ensure_dir(ctx->output_dir)) {
+            log_error("Failed to create output directory %s: %s", ctx->output_dir, strerror(errno));
+            free(ctx);
+            pthread_mutex_unlock(&contexts_mutex);
+            return -1;
+        }
     }
 
     // If using built-in motion detection, enable the motion stream now so that
@@ -738,6 +744,41 @@ int get_unified_detection_stats(const char *stream_name,
     return 0;
 }
 
+/**
+ * Notify a UDT-managed stream of an externally-detected motion event.
+ *
+ * Called from the ONVIF motion recording system when a master stream's motion
+ * event must be forwarded to a slave stream that runs as a UDT (e.g. the PTZ
+ * lens on a TP-Link C545D which has no ONVIF profile of its own).
+ *
+ * This function looks up the target stream under contexts_mutex, so it may
+ * block while waiting for that mutex. If a matching UDT context is found, it
+ * updates ctx->external_motion_trigger atomically; if the target stream is not
+ * managed by a UDT the call is a silent no-op.
+ *
+ * The trigger is not consumed immediately on every packet. It is observed by
+ * the UDT thread during its normal keyframe-based detection processing, so
+ * externally-forwarded motion may not take effect until the next such check.
+ *
+ * Values written to ctx->external_motion_trigger:
+ *   1 = motion active (start / keep-alive)
+ *   2 = motion ended
+ *   0 = idle (initial / reset by UDT thread after processing)
+ */
+void unified_detection_notify_motion(const char *stream_name, bool motion_active) {
+    if (!stream_name) return;
+
+    pthread_mutex_lock(&contexts_mutex);
+    unified_detection_ctx_t *ctx = find_context_by_name(stream_name);
+    if (ctx) {
+        // 1 = motion active, 2 = motion ended
+        atomic_store(&ctx->external_motion_trigger, motion_active ? 1 : 2);
+        log_debug("[%s] external_motion_trigger set to %d via unified_detection_notify_motion",
+                  stream_name, motion_active ? 1 : 2);
+    }
+    pthread_mutex_unlock(&contexts_mutex);
+}
+
 
 /**
  * Connect to RTSP stream
@@ -953,8 +994,7 @@ static void *unified_detection_thread_func(void *arg) {
     }
 
     char stream_name[MAX_STREAM_NAME];
-    strncpy(stream_name, ctx->stream_name, sizeof(stream_name) - 1);
-    stream_name[sizeof(stream_name) - 1] = '\0';
+    safe_strcpy(stream_name, ctx->stream_name, sizeof(stream_name), 0);
 
     log_set_thread_context("Detection", stream_name);
     log_info("[%s] Unified detection thread started", stream_name);
@@ -1052,6 +1092,14 @@ static void *unified_detection_thread_func(void *arg) {
                         log_warn("[%s] Packet timeout, reconnecting", stream_name);
                         disconnect_from_stream(ctx);
                         state = UDT_STATE_RECONNECTING;
+                    } else {
+                        // Avoid busy-looping when av_read_frame returns immediately
+                        // (e.g. RTSP EOF or CSeq mismatch during a go2rtc session reset).
+                        // Without this sleep the loop spins at ~45k iterations/second,
+                        // flooding the log and burning CPU until MAX_PACKET_TIMEOUT_SEC
+                        // is reached.  10 ms still allows the timeout check to trigger
+                        // within one second of the actual deadline.
+                        av_usleep(10000);
                     }
                 }
                 break;
@@ -1305,52 +1353,87 @@ stats_done:
             }
         }
 
-        // Check if max recording duration exceeded for detection recordings
-        // Detection recordings should be limited to pre_buffer + post_buffer duration
-        // This ensures detection recordings are short clips around the detection event,
-        // not long continuous recordings like scheduled/continuous recordings
-        if ((current_state == UDT_STATE_RECORDING || current_state == UDT_STATE_POST_BUFFER) && ctx->mp4_writer) {
-            time_t recording_duration = now - ctx->mp4_writer->creation_time;
-            // For detection recordings, max duration is pre_buffer + post_buffer
-            // This limits each detection clip to a reasonable length
-            int max_duration = ctx->pre_buffer_seconds + ctx->post_buffer_seconds;
-            // Enforce a minimum total duration for detection recordings to avoid extremely short clips
-            if (max_duration < DEFAULT_MIN_DETECTION_RECORDING_DURATION) {
-                log_info(
-                    "[%s] Detection recording duration (%d seconds: pre=%d + post=%d) "
-                    "is below the enforced minimum (%d seconds); using minimum instead",
-                    ctx->stream_name,
-                    max_duration,
-                    ctx->pre_buffer_seconds,
-                    ctx->post_buffer_seconds,
-                    DEFAULT_MIN_DETECTION_RECORDING_DURATION);
-                max_duration = DEFAULT_MIN_DETECTION_RECORDING_DURATION;
-            }
+        // NOTE: Detection recordings are stopped naturally via the POST_BUFFER mechanism
+        // (UDT_STATE_POST_BUFFER → post_buffer_end_time expiry → udt_stop_recording).
+        // A hard max_duration = pre+post cap was removed because it terminated recordings
+        // while motion was still active, producing split clips instead of one coherent file.
+        // For very long events, segment_duration (default 900s) provides the upper bound.
+    }
 
-            // Log every 10 seconds to track progress
-            if (recording_duration > 0 && (recording_duration % 10) == 0 && is_keyframe) {
-                log_info("[%s] Detection recording: %ld/%d seconds elapsed (pre=%d + post=%d)",
-                         ctx->stream_name, (long)recording_duration, max_duration,
-                         ctx->pre_buffer_seconds, ctx->post_buffer_seconds);
-            }
+    // --- External motion trigger (e.g. ONVIF event forwarded from a master stream) ---
+    // Consumed on every keyframe, regardless of current state.
+    //
+    // The exchange used to be inside the stricter keyframe/state guard, which
+    // made the POST_BUFFER branch unreachable and prevented a motion keep-alive
+    // from extending an active recording back from POST_BUFFER to RECORDING.
+    // Consuming the flag here ensures it is always handled on keyframes and
+    // keeps the intended state transitions reachable.
+    if (is_keyframe) {
+        int ext_trigger = atomic_exchange(&ctx->external_motion_trigger, 0);
 
-            if (recording_duration >= max_duration) {
-                log_info("[%s] Max detection recording duration reached (%ld/%d seconds), stopping",
-                         ctx->stream_name, (long)recording_duration, max_duration);
-                udt_stop_recording(ctx);
-                // Go back to BUFFERING state - let detection trigger a new recording naturally
-                // This ensures each detection recording is a short clip, not one long file
-                atomic_store(&ctx->state, UDT_STATE_BUFFERING);
-                // Reset detection time so next detection can trigger immediately
-                atomic_store(&ctx->last_detection_time, 0LL);
+        if (ext_trigger == 1) {
+            // Motion active: treat as a detection event
+            log_info("[%s] External motion trigger (active) received", ctx->stream_name);
+            atomic_store(&ctx->last_detection_time, (long long)now);
+
+            if (!ctx->annotation_only) {
+                if (current_state == UDT_STATE_BUFFERING) {
+                    log_info("[%s] External trigger starting recording", ctx->stream_name);
+                    if (udt_start_recording(ctx) == 0) {
+                        // Flush pre-buffer and correct DB start_time to reflect actual start
+                        int pre_dur = 0;
+                        int pre_cnt = 0; size_t pre_mem = 0;
+                        if (ctx->packet_buffer)
+                            packet_buffer_get_stats(ctx->packet_buffer, &pre_cnt, &pre_mem, &pre_dur);
+
+                        flush_prebuffer_to_recording(ctx);
+                        atomic_store(&ctx->state, UDT_STATE_RECORDING);
+
+                        // Correct start_time in DB and writer to the actual first-packet time
+                        if (!ctx->mp4_writer->start_time_corrected && pre_dur > 0 &&
+                            ctx->current_recording_id > 0) {
+                            // Clamp pre_dur to the configured pre_buffer window.
+                            // go2rtc may deliver a ring-buffer of 200+ seconds; using
+                            // the raw value would push start_time so far back that
+                            // elapsed > max_duration immediately, stopping the recording.
+                            int clamped_pre = pre_dur > ctx->pre_buffer_seconds
+                                              ? ctx->pre_buffer_seconds : pre_dur;
+                            time_t corrected = now - (time_t)clamped_pre;
+                            ctx->mp4_writer->creation_time = corrected;
+                            ctx->mp4_writer->start_time_corrected = true;
+                            update_recording_start_time(ctx->current_recording_id, corrected);
+                            log_info("[%s] Corrected recording start_time by -%ds (pre-buffer, clamped from %ds)",
+                                     ctx->stream_name, clamped_pre, pre_dur);
+                        }
+                    }
+                } else if (current_state == UDT_STATE_POST_BUFFER) {
+                    // Motion keep-alive during post-buffer: extend recording back to RECORDING.
+                    // Previously unreachable due to the state guard — now correctly handled.
+                    log_info("[%s] External trigger during post-buffer, continuing recording", ctx->stream_name);
+                    atomic_store(&ctx->state, UDT_STATE_RECORDING);
+                }
+                // If already RECORDING: just refresh last_detection_time (already done above)
+            }
+        } else if (ext_trigger == 2) {
+            // Motion ended: if recording, enter post-buffer
+            log_info("[%s] External motion trigger (ended) received", ctx->stream_name);
+            if (!ctx->annotation_only && current_state == UDT_STATE_RECORDING) {
+                log_info("[%s] External trigger ending recording, entering post-buffer (%ds)",
+                         ctx->stream_name, ctx->post_buffer_seconds);
+                atomic_store(&ctx->post_buffer_end_time, (long long)(now + ctx->post_buffer_seconds));
+                atomic_store(&ctx->state, UDT_STATE_POST_BUFFER);
             }
         }
+
+        // Re-read state in case external trigger changed it above
+        current_state = (unified_detection_state_t)atomic_load(&ctx->state);
     }
 
     // Run detection based on time interval (in seconds)
     // We check on keyframes as a convenient trigger point, but the decision is time-based
     // This ensures detection_interval is interpreted as seconds, not keyframe count
     if (is_keyframe && current_state != UDT_STATE_POST_BUFFER) {
+
         time_t time_since_last_check = now - (time_t)atomic_load(&ctx->last_detection_check_time);
 
         // Log periodically to show detection is running
@@ -1387,8 +1470,31 @@ stats_done:
 
                         // Start recording first, then flush pre-buffer
                         if (udt_start_recording(ctx) == 0) {
+                            // Flush pre-buffer and correct DB start_time
+                            int pre_dur = 0;
+                            int pre_cnt = 0; size_t pre_mem = 0;
+                            if (ctx->packet_buffer)
+                                packet_buffer_get_stats(ctx->packet_buffer, &pre_cnt, &pre_mem, &pre_dur);
+
                             flush_prebuffer_to_recording(ctx);
                             atomic_store(&ctx->state, UDT_STATE_RECORDING);
+
+                            // Correct start_time in DB and writer to the actual first-packet time
+                            if (!ctx->mp4_writer->start_time_corrected && pre_dur > 0 &&
+                                ctx->current_recording_id > 0) {
+                                // Clamp pre_dur to the configured pre_buffer window.
+                                // go2rtc may deliver a ring-buffer of 200+ seconds; using
+                                // the raw value would push start_time so far back that
+                                // elapsed > max_duration immediately, stopping the recording.
+                                int clamped_pre = pre_dur > ctx->pre_buffer_seconds
+                                                  ? ctx->pre_buffer_seconds : pre_dur;
+                                time_t corrected = now - (time_t)clamped_pre;
+                                ctx->mp4_writer->creation_time = corrected;
+                                ctx->mp4_writer->start_time_corrected = true;
+                                update_recording_start_time(ctx->current_recording_id, corrected);
+                                log_info("[%s] Corrected recording start_time by -%ds (pre-buffer, clamped from %ds)",
+                                         ctx->stream_name, clamped_pre, pre_dur);
+                            }
 
                             // Link any recent detections (that triggered this recording) to the new recording_id
                             // Look back up to detection_interval + 2 seconds to catch the triggering detection
@@ -1442,7 +1548,7 @@ static int udt_start_recording(unified_detection_ctx_t *ctx) {
     // Ensure output directory exists
     struct stat st = {0};
     if (stat(ctx->output_dir, &st) == -1) {
-        if (mkdir(ctx->output_dir, 0755) != 0) {
+        if (ensure_dir(ctx->output_dir)) {
             log_error("[%s] Failed to create output directory: %s", ctx->stream_name, ctx->output_dir);
             return -1;
         }
@@ -1479,7 +1585,7 @@ static int udt_start_recording(unified_detection_ctx_t *ctx) {
     }
 
     // Set trigger type to detection
-    strncpy(ctx->mp4_writer->trigger_type, "detection", sizeof(ctx->mp4_writer->trigger_type) - 1);
+    safe_strcpy(ctx->mp4_writer->trigger_type, "detection", sizeof(ctx->mp4_writer->trigger_type), 0);
 
     // Store recording start time
     ctx->mp4_writer->creation_time = now;
@@ -1487,13 +1593,13 @@ static int udt_start_recording(unified_detection_ctx_t *ctx) {
     // Add recording to database at START (so it appears in recordings list immediately)
     // It will be updated with end_time, size, and is_complete=true when recording stops
     recording_metadata_t metadata = {0};
-    strncpy(metadata.file_path, ctx->current_recording_path, sizeof(metadata.file_path) - 1);
-    strncpy(metadata.stream_name, ctx->stream_name, sizeof(metadata.stream_name) - 1);
+    safe_strcpy(metadata.file_path, ctx->current_recording_path, sizeof(metadata.file_path), 0);
+    safe_strcpy(metadata.stream_name, ctx->stream_name, sizeof(metadata.stream_name), 0);
     metadata.start_time = now;
     metadata.end_time = 0;  // Will be set when recording stops
     metadata.size_bytes = 0;  // Will be set when recording stops
     metadata.is_complete = false;  // Will be set to true when recording stops
-    strncpy(metadata.trigger_type, "detection", sizeof(metadata.trigger_type) - 1);
+    safe_strcpy(metadata.trigger_type, "detection", sizeof(metadata.trigger_type), 0);
 
     ctx->current_recording_id = add_recording_metadata(&metadata);
     if (ctx->current_recording_id > 0) {
@@ -1559,13 +1665,13 @@ static int udt_stop_recording(unified_detection_ctx_t *ctx) {
         // Fallback: if no recording_id, try to add a new record (shouldn't happen normally)
         log_warn("[%s] No recording ID found, creating new database entry", ctx->stream_name);
         recording_metadata_t metadata = {0};
-        strncpy(metadata.file_path, ctx->current_recording_path, sizeof(metadata.file_path) - 1);
-        strncpy(metadata.stream_name, ctx->stream_name, sizeof(metadata.stream_name) - 1);
+        safe_strcpy(metadata.file_path, ctx->current_recording_path, sizeof(metadata.file_path), 0);
+        safe_strcpy(metadata.stream_name, ctx->stream_name, sizeof(metadata.stream_name), 0);
         metadata.start_time = start_time;
         metadata.end_time = end_time;
         metadata.size_bytes = file_size;
         metadata.is_complete = true;
-        strncpy(metadata.trigger_type, "detection", sizeof(metadata.trigger_type) - 1);
+        safe_strcpy(metadata.trigger_type, "detection", sizeof(metadata.trigger_type), 0);
 
         uint64_t recording_id = add_recording_metadata(&metadata);
         if (recording_id > 0) {

@@ -14,6 +14,7 @@
 #include "web/request_response.h"
 #include "web/libuv_connection.h"
 #include "core/logger.h"
+#include "utils/strings.h"
 
 /* ---- Unity boilerplate ---- */
 void setUp(void)    {}
@@ -54,8 +55,8 @@ void test_url_decode_no_encoding(void) {
 void test_get_header_found(void) {
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.headers[0].name, "Content-Type", sizeof(req.headers[0].name) - 1);
-    strncpy(req.headers[0].value, "application/json", sizeof(req.headers[0].value) - 1);
+    safe_strcpy(req.headers[0].name, "Content-Type", sizeof(req.headers[0].name), 0);
+    safe_strcpy(req.headers[0].value, "application/json", sizeof(req.headers[0].value), 0);
     req.num_headers = 1;
 
     const char *v = http_request_get_header(&req, "Content-Type");
@@ -66,8 +67,8 @@ void test_get_header_found(void) {
 void test_get_header_case_insensitive(void) {
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.headers[0].name, "content-type", sizeof(req.headers[0].name) - 1);
-    strncpy(req.headers[0].value, "text/plain", sizeof(req.headers[0].value) - 1);
+    safe_strcpy(req.headers[0].name, "content-type", sizeof(req.headers[0].name), 0);
+    safe_strcpy(req.headers[0].value, "text/plain", sizeof(req.headers[0].value), 0);
     req.num_headers = 1;
 
     const char *v = http_request_get_header(&req, "CONTENT-TYPE");
@@ -89,7 +90,7 @@ void test_get_header_not_found(void) {
 void test_get_query_param_found(void) {
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.query_string, "page=2&limit=10", sizeof(req.query_string) - 1);
+    safe_strcpy(req.query_string, "page=2&limit=10", sizeof(req.query_string), 0);
 
     char val[32];
     int rc = http_request_get_query_param(&req, "page", val, sizeof(val));
@@ -100,7 +101,7 @@ void test_get_query_param_found(void) {
 void test_get_query_param_not_found(void) {
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.query_string, "a=1", sizeof(req.query_string) - 1);
+    safe_strcpy(req.query_string, "a=1", sizeof(req.query_string), 0);
 
     char val[32];
     int rc = http_request_get_query_param(&req, "missing", val, sizeof(val));
@@ -114,7 +115,7 @@ void test_get_query_param_not_found(void) {
 void test_extract_path_param(void) {
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.path, "/api/streams/42", sizeof(req.path) - 1);
+    safe_strcpy(req.path, "/api/streams/42", sizeof(req.path), 0);
 
     char param[32];
     int rc = http_request_extract_path_param(&req, "/api/streams/", param, sizeof(param));
@@ -125,7 +126,7 @@ void test_extract_path_param(void) {
 void test_extract_path_param_encoded(void) {
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.path, "/api/streams/four%20score%20and%202", sizeof(req.path) - 1);
+    safe_strcpy(req.path, "/api/streams/four%20score%20and%202", sizeof(req.path), 0);
 
     char param[32];
     int rc = http_request_extract_path_param(&req, "/api/streams/", param, sizeof(param));
@@ -136,7 +137,7 @@ void test_extract_path_param_encoded(void) {
 void test_extract_path_param_with_query(void) {
     http_request_t req;
     http_request_init(&req);
-    strncpy(req.path, "/api/streams/42?test=yes", sizeof(req.path) - 1);
+    safe_strcpy(req.path, "/api/streams/42?test=yes", sizeof(req.path), 0);
 
     char param[32];
     int rc = http_request_extract_path_param(&req, "/api/streams/", param, sizeof(param));
@@ -206,9 +207,9 @@ void test_libuv_connection_reset_preserves_client_ip(void) {
     libuv_connection_t *conn = libuv_connection_create(&server);
     TEST_ASSERT_NOT_NULL(conn);
 
-    strncpy(conn->request.client_ip, "192.0.2.55", sizeof(conn->request.client_ip) - 1);
-    strncpy(conn->request.user_agent, "RegressionAgent/1.0", sizeof(conn->request.user_agent) - 1);
-    strncpy(conn->request.path, "/api/auth/login", sizeof(conn->request.path) - 1);
+    safe_strcpy(conn->request.client_ip, "192.0.2.55", sizeof(conn->request.client_ip), 0);
+    safe_strcpy(conn->request.user_agent, "RegressionAgent/1.0", sizeof(conn->request.user_agent), 0);
+    safe_strcpy(conn->request.path, "/api/auth/login", sizeof(conn->request.path), 0);
 
     libuv_connection_reset(conn);
 

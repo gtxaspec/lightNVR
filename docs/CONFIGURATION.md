@@ -56,6 +56,7 @@ path = /var/lib/lightnvr/data/database/lightnvr.db
 
 [web]
 port = 8080
+bind_ip = 0.0.0.0
 root = /var/lib/lightnvr/www
 auth_enabled = true
 username = admin
@@ -220,6 +221,7 @@ path = /var/lib/lightnvr/data/database/lightnvr.db
 ```ini
 [web]
 port = 8080
+bind_ip = 0.0.0.0
 root = /var/lib/lightnvr/www
 auth_enabled = true
 username = admin
@@ -229,6 +231,7 @@ web_thread_pool_size = 8
 ```
 
 - `port`: Port for the web interface
+- `bind_ip`: IP address for the web interface
 - `root`: Directory containing web interface files
 - `auth_enabled`: Whether to enable authentication for the web interface
 - `username`: Username for web interface authentication

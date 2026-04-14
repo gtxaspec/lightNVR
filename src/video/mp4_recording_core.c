@@ -30,6 +30,7 @@
 #include "core/url_utils.h"
 #include "core/path_utils.h"
 #include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
 #include "video/mp4_writer.h"
@@ -106,8 +107,7 @@ static void *mp4_recording_thread(void *arg) {
 
     // Make a local copy of the stream name for thread safety
     char stream_name[MAX_STREAM_NAME];
-    strncpy(stream_name, ctx->config.name, MAX_STREAM_NAME - 1);
-    stream_name[MAX_STREAM_NAME - 1] = '\0';
+    safe_strcpy(stream_name, ctx->config.name, MAX_STREAM_NAME, 0);
 
     log_set_thread_context("MP4Recorder", stream_name);
     log_info("Starting MP4 recording thread for stream %s", stream_name);
@@ -120,8 +120,7 @@ static void *mp4_recording_thread(void *arg) {
 
     // Verify output directory exists and is writable
     char mp4_dir[MAX_PATH_LENGTH];
-    strncpy(mp4_dir, ctx->output_path, MAX_PATH_LENGTH - 1);
-    mp4_dir[MAX_PATH_LENGTH - 1] = '\0';
+    safe_strcpy(mp4_dir, ctx->output_path, MAX_PATH_LENGTH, 0);
 
     // Remove filename from path to get directory
     char *last_slash = strrchr(mp4_dir, '/');
@@ -186,8 +185,7 @@ static void *mp4_recording_thread(void *arg) {
 
     // Set trigger type on the writer
     if (ctx->trigger_type[0] != '\0') {
-        strncpy(ctx->mp4_writer->trigger_type, ctx->trigger_type, sizeof(ctx->mp4_writer->trigger_type) - 1);
-        ctx->mp4_writer->trigger_type[sizeof(ctx->mp4_writer->trigger_type) - 1] = '\0';
+        safe_strcpy(ctx->mp4_writer->trigger_type, ctx->trigger_type, sizeof(ctx->mp4_writer->trigger_type), 0);
     }
 
     log_info("Created MP4 writer for %s at %s (trigger_type: %s)", stream_name, ctx->output_path, ctx->mp4_writer->trigger_type);
@@ -235,8 +233,7 @@ static void *mp4_recording_thread(void *arg) {
         if (!success) {
             log_error("Failed to get go2rtc RTSP URL for stream %s after multiple retries, falling back to original URL",
                      stream_name);
-            strncpy(actual_url, ctx->config.url, sizeof(actual_url) - 1);
-            actual_url[sizeof(actual_url) - 1] = '\0';
+            safe_strcpy(actual_url, ctx->config.url, sizeof(actual_url), 0);
         }
 
         // When audio recording is disabled, append ?video to the go2rtc RTSP URL
@@ -248,7 +245,7 @@ static void *mp4_recording_thread(void *arg) {
             const char *suffix = "?video";
             size_t suffix_len = strlen(suffix);
             if (url_len + suffix_len < sizeof(actual_url)) {
-                strncat(actual_url, suffix, sizeof(actual_url) - url_len - 1);
+                safe_strcat(actual_url, suffix, sizeof(actual_url));
                 log_info("Audio recording disabled for %s, using video-only go2rtc RTSP URL",
                          stream_name);
             } else {
@@ -263,8 +260,7 @@ static void *mp4_recording_thread(void *arg) {
                                   actual_url, sizeof(actual_url)) != 0) {
             log_warn("Failed to inject credentials into URL for stream %s, using original URL",
                      stream_name);
-            strncpy(actual_url, ctx->config.url, sizeof(actual_url) - 1);
-            actual_url[sizeof(actual_url) - 1] = '\0';
+            safe_strcpy(actual_url, ctx->config.url, sizeof(actual_url), 0);
         }
     }
 
@@ -289,8 +285,7 @@ static void *mp4_recording_thread(void *arg) {
 
     // Keep a copy of the recording URL for self-healing restarts
     char restart_url[MAX_PATH_LENGTH];
-    strncpy(restart_url, actual_url, sizeof(restart_url) - 1);
-    restart_url[sizeof(restart_url) - 1] = '\0';
+    safe_strcpy(restart_url, actual_url, sizeof(restart_url), 0);
 
     // Dead-detection state for the inner RTSP writer thread
     int dead_check_seconds  = 0;   // consecutive seconds mp4_writer_is_recording() == 0
@@ -356,8 +351,7 @@ static void *mp4_recording_thread(void *arg) {
                         if (using_go2rtc) {
                             char fresh_url[MAX_PATH_LENGTH];
                             if (go2rtc_get_rtsp_url(stream_name, fresh_url, sizeof(fresh_url))) {
-                                strncpy(restart_url, fresh_url, sizeof(restart_url) - 1);
-                                restart_url[sizeof(restart_url) - 1] = '\0';
+                                safe_strcpy(restart_url, fresh_url, sizeof(restart_url), 0);
                                 log_info("Refreshed go2rtc URL for stream %s after cooldown",
                                          stream_name);
                             }
@@ -386,8 +380,7 @@ static void *mp4_recording_thread(void *arg) {
                     if (using_go2rtc) {
                         char fresh_url[MAX_PATH_LENGTH];
                         if (go2rtc_get_rtsp_url(stream_name, fresh_url, sizeof(fresh_url))) {
-                            strncpy(restart_url, fresh_url, sizeof(restart_url) - 1);
-                            restart_url[sizeof(restart_url) - 1] = '\0';
+                            safe_strcpy(restart_url, fresh_url, sizeof(restart_url), 0);
                             log_info("Refreshed go2rtc URL for stream %s", stream_name);
                         }
                     }
@@ -504,10 +497,8 @@ void cleanup_mp4_recording_backend(void) {
 
             items_to_cleanup[cleanup_count].ctx = recording_contexts[i];
             items_to_cleanup[cleanup_count].thread = recording_contexts[i]->thread;
-            strncpy(items_to_cleanup[cleanup_count].stream_name,
-                    recording_contexts[i]->config.name,
-                    MAX_STREAM_NAME - 1);
-            items_to_cleanup[cleanup_count].stream_name[MAX_STREAM_NAME - 1] = '\0';
+            safe_strcpy(items_to_cleanup[cleanup_count].stream_name,
+                    recording_contexts[i]->config.name, MAX_STREAM_NAME, 0);
             items_to_cleanup[cleanup_count].index = i;
 
             // Null the slot now so new recordings (if any race) see it as free
@@ -640,7 +631,7 @@ int start_mp4_recording(const char *stream_name) {
     memset(ctx, 0, sizeof(mp4_recording_ctx_t));
     memcpy(&ctx->config, &config, sizeof(stream_config_t));
     ctx->running = 1;
-    strncpy(ctx->trigger_type, "scheduled", sizeof(ctx->trigger_type) - 1);
+    safe_strcpy(ctx->trigger_type, "scheduled", sizeof(ctx->trigger_type), 0);
 
     // Create output paths
     const config_t *global_config = get_streaming_config();
@@ -676,7 +667,7 @@ int start_mp4_recording(const char *stream_name) {
         // Try to create the parent directory first
         char parent_dir[MAX_PATH_LENGTH];
         if (global_config->record_mp4_directly && global_config->mp4_storage_path[0] != '\0') {
-            strncpy(parent_dir, global_config->mp4_storage_path, MAX_PATH_LENGTH - 1);
+            safe_strcpy(parent_dir, global_config->mp4_storage_path, MAX_PATH_LENGTH, 0);
         } else {
             snprintf(parent_dir, MAX_PATH_LENGTH, "%s/mp4", global_config->storage_path);
         }
@@ -807,11 +798,10 @@ int start_mp4_recording_with_url(const char *stream_name, const char *url) {
     memcpy(&ctx->config, &config, sizeof(stream_config_t));
 
     // Override the URL in the config with the provided URL
-    strncpy(ctx->config.url, url, MAX_PATH_LENGTH - 1);
-    ctx->config.url[MAX_PATH_LENGTH - 1] = '\0';
+    safe_strcpy(ctx->config.url, url, MAX_PATH_LENGTH, 0);
 
     ctx->running = 1;
-    strncpy(ctx->trigger_type, "scheduled", sizeof(ctx->trigger_type) - 1);
+    safe_strcpy(ctx->trigger_type, "scheduled", sizeof(ctx->trigger_type), 0);
 
     // Create output paths
     const config_t *global_config = get_streaming_config();
@@ -847,7 +837,7 @@ int start_mp4_recording_with_url(const char *stream_name, const char *url) {
         // Try to create the parent directory first
         char parent_dir[MAX_PATH_LENGTH];
         if (global_config->record_mp4_directly && global_config->mp4_storage_path[0] != '\0') {
-            strncpy(parent_dir, global_config->mp4_storage_path, MAX_PATH_LENGTH - 1);
+            safe_strcpy(parent_dir, global_config->mp4_storage_path, MAX_PATH_LENGTH, 0);
         } else {
             snprintf(parent_dir, MAX_PATH_LENGTH, "%s/mp4", global_config->storage_path);
         }
@@ -1047,10 +1037,9 @@ int start_mp4_recording_with_trigger(const char *stream_name, const char *trigge
 
     // Set trigger type
     if (trigger_type) {
-        strncpy(ctx->trigger_type, trigger_type, sizeof(ctx->trigger_type) - 1);
-        ctx->trigger_type[sizeof(ctx->trigger_type) - 1] = '\0';
+        safe_strcpy(ctx->trigger_type, trigger_type, sizeof(ctx->trigger_type), 0);
     } else {
-        strncpy(ctx->trigger_type, "scheduled", sizeof(ctx->trigger_type) - 1);
+        safe_strcpy(ctx->trigger_type, "scheduled", sizeof(ctx->trigger_type), 0);
     }
 
     // Create output paths
@@ -1133,8 +1122,7 @@ int start_mp4_recording_with_url_and_trigger(const char *stream_name, const char
     }
 
     // Override the URL with the provided one
-    strncpy(config.url, url, sizeof(config.url) - 1);
-    config.url[sizeof(config.url) - 1] = '\0';
+    safe_strcpy(config.url, url, sizeof(config.url), 0);
 
     // Check if already running — also verify the recording is actually healthy.
     // FIX: treat writer==NULL + ctx->running==1 as "initializing" to prevent
@@ -1204,10 +1192,9 @@ int start_mp4_recording_with_url_and_trigger(const char *stream_name, const char
 
     // Set trigger type
     if (trigger_type) {
-        strncpy(ctx->trigger_type, trigger_type, sizeof(ctx->trigger_type) - 1);
-        ctx->trigger_type[sizeof(ctx->trigger_type) - 1] = '\0';
+        safe_strcpy(ctx->trigger_type, trigger_type, sizeof(ctx->trigger_type), 0);
     } else {
-        strncpy(ctx->trigger_type, "scheduled", sizeof(ctx->trigger_type) - 1);
+        safe_strcpy(ctx->trigger_type, "scheduled", sizeof(ctx->trigger_type), 0);
     }
 
     // Create output paths

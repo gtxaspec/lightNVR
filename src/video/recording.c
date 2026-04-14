@@ -13,6 +13,7 @@
 #include "core/logger.h"
 #include "core/config.h"
 #include "core/path_utils.h"
+#include "utils/strings.h"
 #include "video/stream_manager.h"
 #include "video/streams.h"
 #include "video/mp4_writer.h"
@@ -106,7 +107,7 @@ uint64_t start_recording(const char *stream_name, const char *output_path) {
     // from memset would make them look critical AND hit the 0-multiplier bug.
     metadata.retention_tier = RETENTION_TIER_STANDARD;
 
-    strncpy(metadata.stream_name, stream_name, sizeof(metadata.stream_name) - 1);
+    safe_strcpy(metadata.stream_name, stream_name, sizeof(metadata.stream_name), 0);
 
     // Format paths for the recording - MAKE SURE THIS POINTS TO REAL FILES
     char mp4_path[MAX_PATH_LENGTH];
@@ -115,19 +116,16 @@ uint64_t start_recording(const char *stream_name, const char *output_path) {
     const mp4_writer_t *mp4_writer = get_mp4_writer_for_stream(stream_name);
     if (mp4_writer && mp4_writer->output_path) {
         // Use the actual MP4 file path from the writer
-        strncpy(mp4_path, mp4_writer->output_path, sizeof(mp4_path) - 1);
-        mp4_path[sizeof(mp4_path) - 1] = '\0';
+        safe_strcpy(mp4_path, mp4_writer->output_path, sizeof(mp4_path), 0);
         
         // Store the actual MP4 path in the metadata
-        strncpy(metadata.file_path, mp4_path, sizeof(metadata.file_path) - 1);
-        metadata.file_path[sizeof(metadata.file_path) - 1] = '\0';
+        safe_strcpy(metadata.file_path, mp4_path, sizeof(metadata.file_path), 0);
         
         log_info("Using actual MP4 path for recording: %s", mp4_path);
     } else {
         // Fallback to a default path if no writer is available
         snprintf(mp4_path, sizeof(mp4_path), "%s/recording.mp4", output_path);
-        strncpy(metadata.file_path, mp4_path, sizeof(metadata.file_path) - 1);
-        metadata.file_path[sizeof(metadata.file_path) - 1] = '\0';
+        safe_strcpy(metadata.file_path, mp4_path, sizeof(metadata.file_path), 0);
         
         log_warn("No MP4 writer found for stream %s, using default path: %s", stream_name, mp4_path);
     }
@@ -140,7 +138,7 @@ uint64_t start_recording(const char *stream_name, const char *output_path) {
     metadata.width = config.width;
     metadata.height = config.height;
     metadata.fps = config.fps;
-    strncpy(metadata.codec, config.codec, sizeof(metadata.codec) - 1);
+    safe_strcpy(metadata.codec, config.codec, sizeof(metadata.codec), 0);
     metadata.is_complete = false;
 
     // Add recording to database with detailed error handling
@@ -156,8 +154,8 @@ uint64_t start_recording(const char *stream_name, const char *output_path) {
     for (int i = 0; i < g_config.max_streams; i++) {
         if (active_recordings[i].recording_id == 0) {
             active_recordings[i].recording_id = recording_id;
-            strncpy(active_recordings[i].stream_name, stream_name, MAX_STREAM_NAME - 1);
-            strncpy(active_recordings[i].output_path, output_path, MAX_PATH_LENGTH - 1);
+            safe_strcpy(active_recordings[i].stream_name, stream_name, MAX_STREAM_NAME, 0);
+            safe_strcpy(active_recordings[i].output_path, output_path, MAX_PATH_LENGTH, 0);
             active_recordings[i].start_time = metadata.start_time;
             
             log_info("Started recording for stream %s with ID %llu", 
@@ -185,8 +183,7 @@ void update_recording(const char *stream_name) {
             
             uint64_t recording_id = active_recordings[i].recording_id;
             char output_path[MAX_PATH_LENGTH];
-            strncpy(output_path, active_recordings[i].output_path, MAX_PATH_LENGTH - 1);
-            output_path[MAX_PATH_LENGTH - 1] = '\0';
+            safe_strcpy(output_path, active_recordings[i].output_path, MAX_PATH_LENGTH, 0);
 
             // Calculate total size of all segments
             uint64_t total_size = 0;
@@ -230,8 +227,7 @@ void stop_recording(const char *stream_name) {
             
             uint64_t recording_id = active_recordings[i].recording_id;
             char output_path[MAX_PATH_LENGTH];
-            strncpy(output_path, active_recordings[i].output_path, MAX_PATH_LENGTH - 1);
-            output_path[MAX_PATH_LENGTH - 1] = '\0';
+            safe_strcpy(output_path, active_recordings[i].output_path, MAX_PATH_LENGTH, 0);
             time_t start_time = active_recordings[i].start_time;
             
             // Clear the active recording slot
@@ -265,8 +261,7 @@ void stop_recording(const char *stream_name) {
                 recording_metadata_t metadata;
                 if (get_recording_metadata_by_id(recording_id, &metadata) == 0) {
                     if (mp4_writer->output_path && mp4_writer->output_path[0] != '\0') {
-                        strncpy(metadata.file_path, mp4_writer->output_path, sizeof(metadata.file_path) - 1);
-                        metadata.file_path[sizeof(metadata.file_path) - 1] = '\0';
+                        safe_strcpy(metadata.file_path, mp4_writer->output_path, sizeof(metadata.file_path), 0);
                         update_recording_metadata(recording_id, end_time, total_size, true);
                         log_info("Updated recording %llu with actual MP4 path: %s", 
                                 (unsigned long long)recording_id, metadata.file_path);
@@ -356,8 +351,7 @@ static bool find_first_mp4_in_dir(const char *dir_path, const char *prefix,
 
         /* Keep the lexicographically smallest name (mirrors "| sort | head -1") */
         if (best[0] == '\0' || strcmp(name, best) < 0) {
-            strncpy(best, name, sizeof(best) - 1);
-            best[sizeof(best) - 1] = '\0';
+            safe_strcpy(best, name, sizeof(best), 0);
         }
     }
     closedir(d);
@@ -372,8 +366,7 @@ static bool find_first_mp4_in_dir(const char *dir_path, const char *prefix,
     struct stat st;
     if (stat(full, &st) != 0 || st.st_size == 0) return false;
 
-    strncpy(out_path, full, out_size - 1);
-    out_path[out_size - 1] = '\0';
+    safe_strcpy(out_path, full, out_size, 0);
     return true;
 }
 
@@ -389,7 +382,7 @@ int find_mp4_recording(const char *stream_name, time_t timestamp, char *mp4_path
 
     // Get global config for storage paths
     const config_t *global_config = get_streaming_config();
-    char base_path[256];
+    char base_path[MAX_PATH_LENGTH];
 
     // Format timestamp for pattern matching
     char timestamp_str[32];

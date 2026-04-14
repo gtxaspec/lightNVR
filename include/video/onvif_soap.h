@@ -28,14 +28,13 @@ char *onvif_create_security_header(const char *username, const char *password);
  * can be parsed at the error level.  If the XML cannot be parsed at all,
  * logs the raw response (truncated) as a fallback.
  *
- * @param response      The raw XML response body (will be modified by the
- *                      XML parser — pass a copy if the original is needed).
+ * @param response      The raw XML response body.
  * @param response_len  Length of the response in bytes.
  * @param context       A short description of the request that failed
  *                      (e.g. "PullMessages", "CreatePullPointSubscription"),
  *                      used to prefix the log message.  May be NULL.
  */
-void onvif_log_soap_fault(char *response, size_t response_len, const char *context);
+void onvif_log_soap_fault(const char *response, size_t response_len, const char *context);
 
 #endif /* ONVIF_SOAP_H */
 

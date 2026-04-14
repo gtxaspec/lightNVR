@@ -5,24 +5,9 @@
  * Initialize daemon mode
  *
  * @param pid_file Path to PID file, or NULL for default
- * @return 0 on success, -1 on error
+ * @return Locked PID file descriptor on success, -1 on error
  */
 int init_daemon(const char *pid_file);
-
-/**
- * Cleanup daemon resources
- *
- * @return 0 on success, -1 on error
- */
-int cleanup_daemon(void);
-
-/**
- * Stop running daemon
- *
- * @param pid_file Path to PID file, or NULL for default
- * @return 0 on success, -1 on error
- */
-int stop_daemon(const char *pid_file);
 
 /**
  * Get status of daemon
@@ -32,13 +17,20 @@ int stop_daemon(const char *pid_file);
  */
 int daemon_status(const char *pid_file);
 
+/**
+* Write PID file
+*
+* @param pid_file Path to PID file
+* @return The (locked) PID file descriptor on success, -1 on error
+*/
+int write_pid_file(const char *pid_file);
 
 /**
-* Remove Daemon PID file
+* Unlock and remove PID file
 *
 * @param pid_file Path to PID file
 * @return 0 on success, -1 on error
 */
-int remove_daemon_pid_file(const char *pid_file);
+int remove_pid_file(int fd, const char *pid_file);
 
 #endif /* DAEMON_H */

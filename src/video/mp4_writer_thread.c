@@ -29,6 +29,7 @@
 
 #include "core/logger.h"
 #include "core/shutdown_coordinator.h"
+#include "utils/strings.h"
 #include "video/mp4_writer.h"
 #include "video/mp4_writer_internal.h"
 #include "video/mp4_writer_thread.h"
@@ -55,13 +56,13 @@ static void on_segment_started_cb(void *user_ctx) {
     if (thread_ctx->writer->output_path[0] != '\0') {
         recording_metadata_t metadata;
         memset(&metadata, 0, sizeof(recording_metadata_t));
-        strncpy(metadata.stream_name, stream_name, sizeof(metadata.stream_name) - 1);
-        strncpy(metadata.file_path, thread_ctx->writer->output_path, sizeof(metadata.file_path) - 1);
+        safe_strcpy(metadata.stream_name, stream_name, sizeof(metadata.stream_name), 0);
+        safe_strcpy(metadata.file_path, thread_ctx->writer->output_path, sizeof(metadata.file_path), 0);
         metadata.start_time = time(NULL); // Align to keyframe time
         metadata.end_time = 0;
         metadata.size_bytes = 0;
         metadata.is_complete = false;
-        strncpy(metadata.trigger_type, thread_ctx->writer->trigger_type, sizeof(metadata.trigger_type) - 1);
+        safe_strcpy(metadata.trigger_type, thread_ctx->writer->trigger_type, sizeof(metadata.trigger_type), 0);
 
         uint64_t recording_id = add_recording_metadata(&metadata);
         if (recording_id == 0) {
@@ -91,8 +92,7 @@ static void *mp4_writer_rtsp_thread(void *arg) {
 
     // Create a local copy of needed values to prevent use-after-free
     char rtsp_url[MAX_PATH_LENGTH];
-    strncpy(rtsp_url, thread_ctx->rtsp_url, sizeof(rtsp_url) - 1);
-    rtsp_url[sizeof(rtsp_url) - 1] = '\0';
+    safe_strcpy(rtsp_url, thread_ctx->rtsp_url, sizeof(rtsp_url), 0);
 
     int segment_duration;
 
@@ -108,8 +108,8 @@ static void *mp4_writer_rtsp_thread(void *arg) {
     thread_ctx->segment_info.pending_video_keyframe = NULL;
     memset(thread_ctx->segment_info.stream_name, 0, sizeof(thread_ctx->segment_info.stream_name));
     if (thread_ctx->writer && thread_ctx->writer->stream_name[0] != '\0') {
-        strncpy(thread_ctx->segment_info.stream_name, thread_ctx->writer->stream_name,
-                MAX_STREAM_NAME - 1);
+        safe_strcpy(thread_ctx->segment_info.stream_name, thread_ctx->writer->stream_name,
+                MAX_STREAM_NAME, 0);
     }
     thread_ctx->video_params_detected = false;
     pthread_mutex_init(&thread_ctx->context_mutex, NULL);
@@ -121,10 +121,9 @@ static void *mp4_writer_rtsp_thread(void *arg) {
     // Make a local copy of the stream name for thread safety
     char stream_name[MAX_STREAM_NAME];
     if (thread_ctx->writer && thread_ctx->writer->stream_name[0] != '\0') {
-        strncpy(stream_name, thread_ctx->writer->stream_name, MAX_STREAM_NAME - 1);
-        stream_name[MAX_STREAM_NAME - 1] = '\0';
+        safe_strcpy(stream_name, thread_ctx->writer->stream_name, MAX_STREAM_NAME, 0);
     } else {
-        strncpy(stream_name, "unknown", MAX_STREAM_NAME - 1);
+        safe_strcpy(stream_name, "unknown", MAX_STREAM_NAME, 0);
     }
 
     log_set_thread_context("MP4Writer", stream_name);
@@ -252,8 +251,8 @@ static void *mp4_writer_rtsp_thread(void *arg) {
                     // Audio disabled on a go2rtc URL: append ?video to request
                     // video-only and avoid phantom audio track issues.
                     if (url_len + suffix_len < sizeof(thread_ctx->rtsp_url)) {
-                        strncat(thread_ctx->rtsp_url, video_suffix,
-                                sizeof(thread_ctx->rtsp_url) - url_len - 1);
+                        safe_strcat(thread_ctx->rtsp_url, video_suffix,
+                                sizeof(thread_ctx->rtsp_url));
                         log_info("Appended ?video suffix to RTSP URL for stream %s (audio now disabled): %s",
                                  stream_name, thread_ctx->rtsp_url);
                     }
@@ -304,8 +303,7 @@ static void *mp4_writer_rtsp_thread(void *arg) {
 
                 // Get the current output path before closing
                 char current_path[MAX_PATH_LENGTH];
-                strncpy(current_path, thread_ctx->writer->output_path, MAX_PATH_LENGTH - 1);
-                current_path[MAX_PATH_LENGTH - 1] = '\0';
+                safe_strcpy(current_path, thread_ctx->writer->output_path, MAX_PATH_LENGTH, 0);
 
                 // Defer creation of DB metadata for the new file until first keyframe via callback
                 // so that start_time aligns to a playable keyframe.
@@ -345,13 +343,21 @@ static void *mp4_writer_rtsp_thread(void *arg) {
                 }
 
                 // Update the output path
-                strncpy(thread_ctx->writer->output_path, new_path, MAX_PATH_LENGTH - 1);
-                thread_ctx->writer->output_path[MAX_PATH_LENGTH - 1] = '\0';
+                safe_strcpy(thread_ctx->writer->output_path, new_path, MAX_PATH_LENGTH, 0);
 
                 // Reset current recording ID; new ID will be assigned on first keyframe of next segment
                 thread_ctx->writer->current_recording_id = 0;
 
+                // Reset creation_time to the rotation wall-clock time.
+                // Note: mp4_writer_close() now derives end_time from st.st_mtime
+                // (the file's last-modified timestamp after avio_closep), so
+                // creation_time is no longer used as a baseline for end_time.
+                // It is kept here for diagnostics and any future callers that
+                // may still reference it.
+                thread_ctx->writer->creation_time = current_time;
 
+                // Reset the start_time_corrected flag for the new segment.
+                thread_ctx->writer->start_time_corrected = false;
 
                 // Update rotation time
                 thread_ctx->writer->last_rotation_time = current_time;
@@ -725,8 +731,7 @@ int mp4_writer_start_recording_thread(mp4_writer_t *writer, const char *rtsp_url
     writer->thread_ctx->running = 0;
     atomic_store(&writer->thread_ctx->shutdown_requested, 0);
     atomic_store(&writer->thread_ctx->force_reconnect, 0);
-    strncpy(writer->thread_ctx->rtsp_url, rtsp_url, sizeof(writer->thread_ctx->rtsp_url) - 1);
-    writer->thread_ctx->rtsp_url[sizeof(writer->thread_ctx->rtsp_url) - 1] = '\0';
+    safe_strcpy(writer->thread_ctx->rtsp_url, rtsp_url, sizeof(writer->thread_ctx->rtsp_url), 0);
 
     // Create thread with proper error handling
     int ret = pthread_create(&writer->thread_ctx->thread, NULL, mp4_writer_rtsp_thread, writer->thread_ctx);
@@ -800,11 +805,9 @@ void mp4_writer_stop_recording_thread(mp4_writer_t *writer) {
     // copy ensures we always have a safe string for logging.
     char sname[MAX_STREAM_NAME];
     if (writer->stream_name[0] > 0x1F && writer->stream_name[0] < 0x7F) {
-        strncpy(sname, writer->stream_name, MAX_STREAM_NAME - 1);
-        sname[MAX_STREAM_NAME - 1] = '\0';
+        safe_strcpy(sname, writer->stream_name, MAX_STREAM_NAME, 0);
     } else {
-        strncpy(sname, "unknown", MAX_STREAM_NAME - 1);
-        sname[MAX_STREAM_NAME - 1] = '\0';
+        safe_strcpy(sname, "unknown", MAX_STREAM_NAME, 0);
     }
 
     // Capture thread handle locally before any operations that might

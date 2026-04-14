@@ -22,6 +22,7 @@
 #define LOG_COMPONENT "Thumbnail"
 #include "core/logger.h"
 #include "utils/memory.h"
+#include "utils/strings.h"
 
 // Maximum concurrent thumbnail generations
 #define MAX_CONCURRENT_THUMBNAILS 4
@@ -305,8 +306,8 @@ int thumbnail_thread_submit(uint64_t recording_id, int index,
 
     work->recording_id = recording_id;
     work->index = index;
-    snprintf(work->input_path, sizeof(work->input_path), "%s", input_path);
-    snprintf(work->output_path, sizeof(work->output_path), "%s", output_path);
+    safe_strcpy(work->input_path, input_path, sizeof(work->input_path), 0);
+    safe_strcpy(work->output_path, output_path, sizeof(work->output_path), 0);
     work->seek_seconds = seek_seconds;
     work->deferred_action = deferred_action;
     work->callback = callback;

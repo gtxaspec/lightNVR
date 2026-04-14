@@ -15,6 +15,7 @@
 #include <sqlite3.h>
 
 #include "unity.h"
+#include "utils/strings.h"
 #include "database/db_core.h"
 #include "database/db_maintenance.h"
 #include "database/db_recordings.h"
@@ -37,10 +38,10 @@ void test_get_database_size_increases_after_insert(void) {
     /* Insert some data */
     recording_metadata_t m;
     memset(&m, 0, sizeof(m));
-    strncpy(m.stream_name, "cam1",    sizeof(m.stream_name)  - 1);
-    strncpy(m.file_path,   "/r.mp4",  sizeof(m.file_path)    - 1);
-    strncpy(m.codec,       "h264",    sizeof(m.codec)        - 1);
-    strncpy(m.trigger_type,"scheduled",sizeof(m.trigger_type)- 1);
+    safe_strcpy(m.stream_name, "cam1",    sizeof(m.stream_name),   0);
+    safe_strcpy(m.file_path,   "/r.mp4",  sizeof(m.file_path),     0);
+    safe_strcpy(m.codec,       "h264",    sizeof(m.codec),         0);
+    safe_strcpy(m.trigger_type,"scheduled",sizeof(m.trigger_type), 0);
     m.start_time = time(NULL);
     m.end_time   = m.start_time + 60;
     m.size_bytes = 1024;
