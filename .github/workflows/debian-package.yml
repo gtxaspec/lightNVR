@@ -106,30 +106,32 @@ jobs:
           docker cp "${CID}:/bin/go2rtc"   "${PKG_DIR}/usr/bin/go2rtc"
 
           # Custom-built libraries (bundle to guarantee ABI compatibility)
-          # Include both 'usr/lib/…' and './usr/lib/…' variants because
-          # docker export may prefix paths with './' depending on version.
-          # All custom libs live under /usr/lib/ in the image (on usrmerge
-          # systems /lib is a symlink to /usr/lib, so libsod also lands there).
+          # Use docker cp to extract /usr/lib into a temp dir, then pick
+          # out only the bundled libraries we need.  This replaces the
+          # fragile "docker export | tar --wildcards" approach which broke
+          # when Docker/BuildKit changed the tar path prefix format.
           mkdir -p /tmp/lightnvr_libs
-          docker export "${CID}" | tar xf - --wildcards \
-            'usr/lib/libuv.so*' './usr/lib/libuv.so*' \
-            'usr/lib/libllhttp.so*' './usr/lib/libllhttp.so*' \
-            'usr/lib/libsqlite3.so*' './usr/lib/libsqlite3.so*' \
-            'usr/lib/libsod.so*' './usr/lib/libsod.so*' \
-            -C /tmp/lightnvr_libs/ 2>/dev/null || true
+          docker cp "${CID}:/usr/lib/." /tmp/lightnvr_libs/
+          echo "=== Bundled library candidates ==="
+          ls -la /tmp/lightnvr_libs/lib{uv,llhttp,sqlite3,sod}* 2>/dev/null || true
 
-          find /tmp/lightnvr_libs -type f -name '*.so*' ! -type l \
-            -exec install -m 644 {} "${PKG_DIR}/usr/lib/lightnvr/" \;
-
-          # Verify that all expected libraries were extracted
           for expected_lib in libuv libllhttp libsqlite3 libsod; do
-            if ! ls "${PKG_DIR}/usr/lib/lightnvr/${expected_lib}.so"* >/dev/null 2>&1; then
+            found=0
+            for f in /tmp/lightnvr_libs/${expected_lib}.so*; do
+              # Only install real files, not symlinks (we recreate symlinks below)
+              if [ -f "$f" ] && [ ! -L "$f" ]; then
+                install -m 644 "$f" "${PKG_DIR}/usr/lib/lightnvr/"
+                found=1
+              fi
+            done
+            if [ "$found" -eq 0 ]; then
               echo "ERROR: ${expected_lib} not found in extracted libraries!"
-              echo "Contents of /tmp/lightnvr_libs:"
-              find /tmp/lightnvr_libs -type f -name '*.so*' 2>/dev/null
+              echo "Available .so files in /tmp/lightnvr_libs/:"
+              ls /tmp/lightnvr_libs/*.so* 2>/dev/null | head -30
               exit 1
             fi
           done
+          rm -rf /tmp/lightnvr_libs
 
           # Recreate soname symlink chains inside the package directory
           # (Docker COPY dereferences symlinks, so we must recreate them)
