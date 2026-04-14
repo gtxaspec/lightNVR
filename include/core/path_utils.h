@@ -68,6 +68,4 @@ int chmod_parent(const char *path, mode_t mode);
  */
 int chmod_recursive(const char *path, mode_t mode);
 
-// TODO: create recursive chmod for folders only and use that instead of chmod_recursive
-
 #endif /* LIGHTNVR_PATH_UTILS_H */
