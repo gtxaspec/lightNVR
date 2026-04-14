@@ -345,12 +345,32 @@ int packet_buffer_add_packet(packet_buffer_t *buffer, const AVPacket *packet, ti
 
     pthread_mutex_lock(&buffer->mutex);
 
-    // Check if buffer is full
+    // Time-based eviction: remove packets older than buffer_seconds regardless of FPS.
+    // This ensures the pre-buffer never exceeds the configured window even when the
+    // stream runs at a much lower FPS than the 15 fps assumed by max_packets estimation.
+    while (buffer->count > 0) {
+        time_t oldest = buffer->packets[buffer->tail].timestamp;
+        if ((timestamp - oldest) > (time_t)buffer->buffer_seconds) {
+            if (buffer->packets[buffer->tail].packet) {
+                buffer->current_memory_usage -= buffer->packets[buffer->tail].data_size;
+                av_packet_free(&buffer->packets[buffer->tail].packet);
+                buffer->packets[buffer->tail].packet = NULL;
+            }
+            buffer->tail = (buffer->tail + 1) % buffer->max_packets;
+            buffer->count--;
+            buffer->total_packets_dropped++;
+        } else {
+            break;
+        }
+    }
+
+    // Fallback: if buffer is still full (burst of packets within the time window),
+    // evict the oldest by packet count to guarantee a free slot.
     if (buffer->count >= buffer->max_packets) {
-        // Remove oldest packet to make room
         if (buffer->packets[buffer->tail].packet) {
             buffer->current_memory_usage -= buffer->packets[buffer->tail].data_size;
             av_packet_free(&buffer->packets[buffer->tail].packet);
+            buffer->packets[buffer->tail].packet = NULL;
         }
         buffer->tail = (buffer->tail + 1) % buffer->max_packets;
         buffer->count--;
@@ -383,9 +403,11 @@ int packet_buffer_add_packet(packet_buffer_t *buffer, const AVPacket *packet, ti
     buffer->total_bytes_buffered += packet->size;
     buffer->total_packets_buffered++;
 
-    // Update timing
+    // Update timing — always derive from the actual tail after time-based eviction
     if (buffer->count == 0) {
         buffer->oldest_packet_time = timestamp;
+    } else {
+        buffer->oldest_packet_time = buffer->packets[buffer->tail].timestamp;
     }
     buffer->newest_packet_time = timestamp;
 
