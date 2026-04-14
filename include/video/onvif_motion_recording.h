@@ -38,6 +38,8 @@ typedef struct {
     char event_type[64];            // Type of motion event
     float confidence;               // Event confidence (if available)
     bool active;                    // Whether motion is currently active
+    bool is_propagated;             // True if this event was already propagated from
+                                    // another stream — prevents infinite cross-stream loops
 } motion_event_t;
 
 // Event queue structure

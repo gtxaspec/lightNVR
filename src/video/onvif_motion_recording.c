@@ -836,44 +836,83 @@ int process_motion_event(const char *stream_name, bool motion_detected, time_t t
     log_debug("Queued motion event for stream: %s (active: %d)", stream_name, motion_detected);
 
     // Cross-stream motion trigger: propagate this event to any streams that
-    // have their motion_trigger_source set to the current stream's name.
-    // This enables dual-lens cameras (e.g. TP-Link C545D) where the fixed
-    // wide-angle lens provides ONVIF events and the PTZ lens does not.
+    // have their motion_trigger_source set to the current stream's name,
+    // AND — for bidirectional dual-lens support — also notify the stream
+    // that is configured as THIS stream's own motion_trigger_source.
     //
-    // Two propagation paths exist:
-    //  A) ONVIF-managed slave  → push a motion_event_t onto the ONVIF event queue
-    //  B) UDT-managed slave    → call unified_detection_notify_motion() so the UDT
-    //                            thread picks it up on the next packet boundary
+    // Bidirectional design (TP-Link C545D and similar):
+    //   Both lenses post motion events to a single shared ONVIF endpoint.
+    //   Whichever lens's ONVIF thread consumes the event first should
+    //   immediately trigger recording on the other lens, regardless of
+    //   which direction the motion_trigger_source relationship is configured.
     //
-    // Both paths are attempted for every matching slave stream; whichever
-    // system is not managing that stream will silently ignore the call.
+    // Loop prevention:
+    //   The is_propagated flag is set on every forwarded event.  A stream
+    //   that receives a propagated event will NOT propagate it further,
+    //   breaking any potential ping-pong between two linked streams.
+    //
+    // Two delivery paths exist per target stream:
+    //  A) ONVIF-managed stream → push a motion_event_t onto its event queue
+    //  B) UDT-managed stream   → call unified_detection_notify_motion() so
+    //                            the UDT picks it up on the next keyframe
+    //
+    // Both paths are always attempted; whichever system does not own the
+    // target stream silently ignores the call.
+
+    // Only propagate if this event was not itself already a propagated copy.
+    if (event.is_propagated) {
+        return 0;
+    }
+
     int max_streams = g_config.max_streams > 0 ? g_config.max_streams : MAX_STREAMS;
     stream_config_t *all_streams = calloc(max_streams, sizeof(stream_config_t));
     if (all_streams) {
         int count = get_all_stream_configs(all_streams, max_streams);
+
+        // Collect our own motion_trigger_source (reverse direction)
+        char own_trigger_source[MAX_STREAM_NAME] = {0};
         for (int i = 0; i < count; i++) {
-            if (all_streams[i].motion_trigger_source[0] != '\0' &&
-                strcmp(all_streams[i].motion_trigger_source, stream_name) == 0) {
-                // Path A: ONVIF event queue (for ONVIF-managed slave streams)
-                motion_event_t linked_event;
-                memset(&linked_event, 0, sizeof(motion_event_t));
-                safe_strcpy(linked_event.stream_name, all_streams[i].name, MAX_STREAM_NAME, 0);
-                linked_event.timestamp = timestamp;
-                linked_event.active = motion_detected;
-                linked_event.confidence = 1.0f;
-                safe_strcpy(linked_event.event_type, "motion", sizeof(linked_event.event_type), 0);
-
-                if (push_event(&linked_event) != 0) {
-                    log_error("Failed to push linked motion event to stream: %s (triggered by: %s)",
-                              all_streams[i].name, stream_name);
-                } else {
-                    log_info("Propagated motion event (%s) from '%s' to linked ONVIF stream '%s'",
-                             motion_detected ? "start" : "end", stream_name, all_streams[i].name);
-                }
-
-                // Path B: UDT external trigger (for UDT-managed slave streams, e.g. PTZ lens)
-                unified_detection_notify_motion(all_streams[i].name, motion_detected);
+            if (strcmp(all_streams[i].name, stream_name) == 0 &&
+                all_streams[i].motion_trigger_source[0] != '\0') {
+                safe_strcpy(own_trigger_source, all_streams[i].motion_trigger_source,
+                            MAX_STREAM_NAME, 0);
+                break;
             }
+        }
+
+        for (int i = 0; i < count; i++) {
+            // Forward direction: streams that list us as their trigger source
+            bool forward = (all_streams[i].motion_trigger_source[0] != '\0' &&
+                            strcmp(all_streams[i].motion_trigger_source, stream_name) == 0);
+            // Reverse direction: the stream we list as our own trigger source
+            bool reverse = (own_trigger_source[0] != '\0' &&
+                            strcmp(all_streams[i].name, own_trigger_source) == 0);
+
+            if (!forward && !reverse) continue;
+            // Never echo back to ourselves
+            if (strcmp(all_streams[i].name, stream_name) == 0) continue;
+
+            motion_event_t linked_event;
+            memset(&linked_event, 0, sizeof(motion_event_t));
+            safe_strcpy(linked_event.stream_name, all_streams[i].name, MAX_STREAM_NAME, 0);
+            linked_event.timestamp = timestamp;
+            linked_event.active = motion_detected;
+            linked_event.confidence = 1.0f;
+            linked_event.is_propagated = true;  // block second-order propagation
+            safe_strcpy(linked_event.event_type, "motion", sizeof(linked_event.event_type), 0);
+
+            // Path A: ONVIF event queue
+            if (push_event(&linked_event) != 0) {
+                log_error("Failed to push linked motion event to stream: %s (triggered by: %s)",
+                          all_streams[i].name, stream_name);
+            } else {
+                log_info("Propagated motion event (%s) from '%s' to linked ONVIF stream '%s' (%s)",
+                         motion_detected ? "start" : "end", stream_name, all_streams[i].name,
+                         reverse ? "reverse" : "forward");
+            }
+
+            // Path B: UDT external trigger
+            unified_detection_notify_motion(all_streams[i].name, motion_detected);
         }
         free(all_streams);
     }
