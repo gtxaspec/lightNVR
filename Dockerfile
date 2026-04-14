@@ -208,10 +208,8 @@ COPY --from=builder /usr/lib/libllhttp.so* /usr/lib/
 # Copy latest upstream SQLite shared library built in the builder stage
 COPY --from=builder /usr/lib/libsqlite3.so* /usr/lib/
 
-# Copy SOD libraries
-COPY --from=builder /lib/libsod.so.1.1.9 /lib/libsod.so.1.1.9
-COPY --from=builder /lib/libsod.so.1 /lib/libsod.so.1
-COPY --from=builder /lib/libsod.so /lib/libsod.so
+# Copy SOD libraries (use /usr/lib/ consistently; on usrmerge systems /lib → /usr/lib)
+COPY --from=builder /usr/lib/libsod.so* /usr/lib/
 
 # Copy web assets (copy CONTENTS of dist into /var/lib/lightnvr/www)
 COPY --from=builder /opt/web/dist/ /var/lib/lightnvr/www/

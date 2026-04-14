@@ -106,27 +106,36 @@ jobs:
           docker cp "${CID}:/bin/go2rtc"   "${PKG_DIR}/usr/bin/go2rtc"
 
           # Custom-built libraries (bundle to guarantee ABI compatibility)
+          # Include both 'usr/lib/…' and './usr/lib/…' variants because
+          # docker export may prefix paths with './' depending on version.
+          # All custom libs live under /usr/lib/ in the image (on usrmerge
+          # systems /lib is a symlink to /usr/lib, so libsod also lands there).
           mkdir -p /tmp/lightnvr_libs
           docker export "${CID}" | tar xf - --wildcards \
-            'usr/lib/libuv.so*' \
-            'usr/lib/libllhttp.so*' \
-            'usr/lib/libsqlite3.so*' \
-            'lib/libsod.so*' \
+            'usr/lib/libuv.so*' './usr/lib/libuv.so*' \
+            'usr/lib/libllhttp.so*' './usr/lib/libllhttp.so*' \
+            'usr/lib/libsqlite3.so*' './usr/lib/libsqlite3.so*' \
+            'usr/lib/libsod.so*' './usr/lib/libsod.so*' \
             -C /tmp/lightnvr_libs/ 2>/dev/null || true
 
           find /tmp/lightnvr_libs -type f -name '*.so*' ! -type l \
             -exec install -m 644 {} "${PKG_DIR}/usr/lib/lightnvr/" \;
 
-          # Recreate symlinks inside the package directory
+          # Verify that all expected libraries were extracted
+          for expected_lib in libuv libllhttp libsqlite3 libsod; do
+            if ! ls "${PKG_DIR}/usr/lib/lightnvr/${expected_lib}.so"* >/dev/null 2>&1; then
+              echo "ERROR: ${expected_lib} not found in extracted libraries!"
+              echo "Contents of /tmp/lightnvr_libs:"
+              find /tmp/lightnvr_libs -type f -name '*.so*' 2>/dev/null
+              exit 1
+            fi
+          done
+
+          # Recreate soname symlink chains inside the package directory
+          # (Docker COPY dereferences symlinks, so we must recreate them)
           (cd "${PKG_DIR}/usr/lib/lightnvr" && \
-            for f in libuv.so.1.0.0 libllhttp.so.9.3.1 libsod.so.1.1.9; do \
-              [ -f "$f" ] || continue; \
-              BASE="${f%%.*}"; \
-              SONAME=$(readlink -f /tmp/lightnvr_libs/usr/lib/${f} 2>/dev/null | xargs -I{} basename {} 2>/dev/null || echo ""); \
-              ln -sf "$f" "${BASE}.so" 2>/dev/null || true; \
-            done; \
-            [ -f libsod.so.1.1.9 ] && ln -sf libsod.so.1.1.9 libsod.so.1 && ln -sf libsod.so.1 libsod.so || true; \
-            [ -f libuv.so.1.0.0  ] && ln -sf libuv.so.1.0.0  libuv.so.1  && ln -sf libuv.so.1  libuv.so  || true; \
+            [ -f libsod.so.1.1.9 ]    && ln -sf libsod.so.1.1.9    libsod.so.1    && ln -sf libsod.so.1    libsod.so    || true; \
+            [ -f libuv.so.1.0.0  ]    && ln -sf libuv.so.1.0.0     libuv.so.1     && ln -sf libuv.so.1     libuv.so     || true; \
             [ -f libllhttp.so.9.3.1 ] && ln -sf libllhttp.so.9.3.1 libllhttp.so.9 && ln -sf libllhttp.so.9 libllhttp.so || true)
 
           # Find and symlink sqlite3 if extracted
