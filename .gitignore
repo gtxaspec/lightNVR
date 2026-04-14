@@ -112,3 +112,4 @@ lightnvr-buildroot/
 *.png
 lightnvr-provisioning-prd.docx.md
 .mcp.json
+*.patch
