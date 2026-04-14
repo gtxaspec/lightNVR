@@ -272,6 +272,142 @@ void test_motion_trigger_source_in_get_all(void) {
     TEST_ASSERT_TRUE(found_ptz);
 }
 
+/* ================================================================
+ * go2rtc source override tests
+ * ================================================================ */
+
+void test_go2rtc_source_override_defaults_empty(void) {
+    stream_config_t s = make_stream("cam_g2r_def", true);
+    add_stream_config(&s);
+
+    stream_config_t got;
+    TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_g2r_def", &got));
+    TEST_ASSERT_EQUAL_STRING("", got.go2rtc_source_override);
+}
+
+void test_go2rtc_source_override_round_trip(void) {
+    stream_config_t s = make_stream("cam_g2r_rt", true);
+    safe_strcpy(s.go2rtc_source_override,
+                "- rtsp://admin:pass@cam/main#transport=tcp\n- ffmpeg:cam_g2r_rt#video=h264#hardware",
+                sizeof(s.go2rtc_source_override), 0);
+    add_stream_config(&s);
+
+    stream_config_t got;
+    TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_g2r_rt", &got));
+    TEST_ASSERT_EQUAL_STRING(
+        "- rtsp://admin:pass@cam/main#transport=tcp\n- ffmpeg:cam_g2r_rt#video=h264#hardware",
+        got.go2rtc_source_override);
+}
+
+void test_go2rtc_source_override_update(void) {
+    stream_config_t s = make_stream("cam_g2r_upd", true);
+    safe_strcpy(s.go2rtc_source_override, "rtsp://old/stream", sizeof(s.go2rtc_source_override), 0);
+    add_stream_config(&s);
+
+    safe_strcpy(s.go2rtc_source_override, "rtsp://new/stream#transport=tcp", sizeof(s.go2rtc_source_override), 0);
+    TEST_ASSERT_EQUAL_INT(0, update_stream_config("cam_g2r_upd", &s));
+
+    stream_config_t got;
+    TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_g2r_upd", &got));
+    TEST_ASSERT_EQUAL_STRING("rtsp://new/stream#transport=tcp", got.go2rtc_source_override);
+}
+
+void test_go2rtc_source_override_in_get_all(void) {
+    stream_config_t plain = make_stream("cam_g2r_plain", true);
+    stream_config_t custom = make_stream("cam_g2r_custom", true);
+    safe_strcpy(custom.go2rtc_source_override, "ffmpeg:cam_g2r_custom#video=h264",
+                sizeof(custom.go2rtc_source_override), 0);
+    add_stream_config(&plain);
+    add_stream_config(&custom);
+
+    stream_config_t out[10];
+    int n = get_all_stream_configs(out, 10);
+    TEST_ASSERT_EQUAL_INT(2, n);
+
+    bool found = false;
+    for (int i = 0; i < n; i++) {
+        if (strcmp(out[i].name, "cam_g2r_custom") == 0) {
+            TEST_ASSERT_EQUAL_STRING("ffmpeg:cam_g2r_custom#video=h264", out[i].go2rtc_source_override);
+            found = true;
+        } else if (strcmp(out[i].name, "cam_g2r_plain") == 0) {
+            TEST_ASSERT_EQUAL_STRING("", out[i].go2rtc_source_override);
+        }
+    }
+    TEST_ASSERT_TRUE(found);
+}
+
+void test_go2rtc_source_override_clear(void) {
+    stream_config_t s = make_stream("cam_g2r_clr", true);
+    safe_strcpy(s.go2rtc_source_override, "rtsp://custom/stream", sizeof(s.go2rtc_source_override), 0);
+    add_stream_config(&s);
+
+    s.go2rtc_source_override[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(0, update_stream_config("cam_g2r_clr", &s));
+
+    stream_config_t got;
+    TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_g2r_clr", &got));
+    TEST_ASSERT_EQUAL_STRING("", got.go2rtc_source_override);
+}
+
+/* ================================================================
+ * sub-stream URL tests
+ * ================================================================ */
+
+void test_sub_stream_url_defaults_empty(void) {
+    stream_config_t s = make_stream("cam_sub_def", true);
+    add_stream_config(&s);
+
+    stream_config_t got;
+    TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_sub_def", &got));
+    TEST_ASSERT_EQUAL_STRING("", got.sub_stream_url);
+}
+
+void test_sub_stream_url_round_trip(void) {
+    stream_config_t s = make_stream("cam_sub_rt", true);
+    safe_strcpy(s.sub_stream_url, "rtsp://camera/substream", sizeof(s.sub_stream_url), 0);
+    add_stream_config(&s);
+
+    stream_config_t got;
+    TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_sub_rt", &got));
+    TEST_ASSERT_EQUAL_STRING("rtsp://camera/substream", got.sub_stream_url);
+}
+
+void test_sub_stream_url_update(void) {
+    stream_config_t s = make_stream("cam_sub_upd", true);
+    safe_strcpy(s.sub_stream_url, "rtsp://camera/sub_old", sizeof(s.sub_stream_url), 0);
+    add_stream_config(&s);
+
+    safe_strcpy(s.sub_stream_url, "rtsp://camera/sub_new", sizeof(s.sub_stream_url), 0);
+    TEST_ASSERT_EQUAL_INT(0, update_stream_config("cam_sub_upd", &s));
+
+    stream_config_t got;
+    TEST_ASSERT_EQUAL_INT(0, get_stream_config_by_name("cam_sub_upd", &got));
+    TEST_ASSERT_EQUAL_STRING("rtsp://camera/sub_new", got.sub_stream_url);
+}
+
+void test_sub_stream_url_in_get_all(void) {
+    stream_config_t main_only = make_stream("cam_sub_main", true);
+    stream_config_t with_sub = make_stream("cam_sub_both", true);
+    safe_strcpy(with_sub.sub_stream_url, "rtsp://camera/low", sizeof(with_sub.sub_stream_url), 0);
+    add_stream_config(&main_only);
+    add_stream_config(&with_sub);
+
+    stream_config_t out[10];
+    int n = get_all_stream_configs(out, 10);
+    TEST_ASSERT_EQUAL_INT(2, n);
+
+    bool found = false;
+    for (int i = 0; i < n; i++) {
+        if (strcmp(out[i].name, "cam_sub_both") == 0) {
+            TEST_ASSERT_EQUAL_STRING("rtsp://camera/low", out[i].sub_stream_url);
+            found = true;
+        } else if (strcmp(out[i].name, "cam_sub_main") == 0) {
+            TEST_ASSERT_EQUAL_STRING("", out[i].sub_stream_url);
+        }
+    }
+    TEST_ASSERT_TRUE(found);
+}
+
 void test_repair_onvif_embedded_credentials_migration_normalizes_legacy_rows(void) {
     sqlite3 *db = get_db_handle();
     exec_sql_or_fail(db, "DELETE FROM streams;");
@@ -324,6 +460,15 @@ int main(void) {
     RUN_TEST(test_motion_trigger_source_round_trip);
     RUN_TEST(test_motion_trigger_source_update);
     RUN_TEST(test_motion_trigger_source_in_get_all);
+    RUN_TEST(test_go2rtc_source_override_defaults_empty);
+    RUN_TEST(test_go2rtc_source_override_round_trip);
+    RUN_TEST(test_go2rtc_source_override_update);
+    RUN_TEST(test_go2rtc_source_override_in_get_all);
+    RUN_TEST(test_go2rtc_source_override_clear);
+    RUN_TEST(test_sub_stream_url_defaults_empty);
+    RUN_TEST(test_sub_stream_url_round_trip);
+    RUN_TEST(test_sub_stream_url_update);
+    RUN_TEST(test_sub_stream_url_in_get_all);
 
     int result = UNITY_END();
     shutdown_database();

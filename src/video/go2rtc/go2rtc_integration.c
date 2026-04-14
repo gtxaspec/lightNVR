@@ -1355,19 +1355,38 @@ bool go2rtc_integration_register_all_streams(void) {
     bool all_success = true;
     for (int i = 0; i < count; i++) {
         if (streams[i].enabled) {
-            log_info("Registering stream %s with go2rtc", streams[i].name);
-
-            // Register the stream with go2rtc
-            if (!go2rtc_stream_register(streams[i].name, streams[i].url,
-                                       streams[i].onvif_username[0] != '\0' ? streams[i].onvif_username : NULL,
-                                       streams[i].onvif_password[0] != '\0' ? streams[i].onvif_password : NULL,
-                                       streams[i].backchannel_enabled, streams[i].protocol,
-                                       streams[i].record_audio)) {
-                log_error("Failed to register stream %s with go2rtc", streams[i].name);
-                all_success = false;
-                // Continue with other streams
+            // Skip main stream API registration when go2rtc source override is set —
+            // the main stream is already defined in go2rtc.yaml.
+            // Sub-stream registration still proceeds via API regardless.
+            if (streams[i].go2rtc_source_override[0] != '\0') {
+                log_info("Skipping main stream API registration for %s (has go2rtc source override)", streams[i].name);
             } else {
-                log_info("Successfully registered stream %s with go2rtc", streams[i].name);
+                log_info("Registering stream %s with go2rtc", streams[i].name);
+
+                if (!go2rtc_stream_register(streams[i].name, streams[i].url,
+                                           streams[i].onvif_username[0] != '\0' ? streams[i].onvif_username : NULL,
+                                           streams[i].onvif_password[0] != '\0' ? streams[i].onvif_password : NULL,
+                                           streams[i].backchannel_enabled, streams[i].protocol,
+                                           streams[i].record_audio)) {
+                    log_error("Failed to register stream %s with go2rtc", streams[i].name);
+                    all_success = false;
+                } else {
+                    log_info("Successfully registered stream %s with go2rtc", streams[i].name);
+                }
+            }
+
+            // Register sub-stream if configured (low-res for grid view) —
+            // always via API, even when main stream uses config override.
+            if (streams[i].sub_stream_url[0] != '\0') {
+                char sub_name[MAX_STREAM_NAME + 8];
+                snprintf(sub_name, sizeof(sub_name), "%s_sub", streams[i].name);
+                log_info("Registering sub-stream %s with go2rtc", sub_name);
+                if (!go2rtc_stream_register(sub_name, streams[i].sub_stream_url,
+                                           streams[i].onvif_username[0] != '\0' ? streams[i].onvif_username : NULL,
+                                           streams[i].onvif_password[0] != '\0' ? streams[i].onvif_password : NULL,
+                                           false, streams[i].protocol, false)) {
+                    log_warn("Failed to register sub-stream %s with go2rtc", sub_name);
+                }
             }
         }
     }
@@ -1434,18 +1453,7 @@ bool go2rtc_sync_streams_from_database(void) {
             skipped++;
             continue;
         }
-
-        // Check if stream already exists in go2rtc
-        if (go2rtc_api_stream_exists(db_streams[i].name)) {
-            log_debug("Stream %s already exists in go2rtc, skipping", db_streams[i].name);
-            skipped++;
-            continue;
-        }
-
-        // Stream needs to be registered
-        log_info("Registering missing stream %s with go2rtc", db_streams[i].name);
-
-        // Determine username and password
+        // Determine username and password (needed for both main and sub-stream)
         const char *username = NULL;
         const char *password = NULL;
 
@@ -1456,17 +1464,42 @@ bool go2rtc_sync_streams_from_database(void) {
             password = db_streams[i].onvif_password;
         }
 
-        // Register the stream
-        if (!go2rtc_stream_register(db_streams[i].name, db_streams[i].url,
-                                    username, password,
-                                    db_streams[i].backchannel_enabled, db_streams[i].protocol,
-                                    db_streams[i].record_audio)) {
-            log_error("Failed to register stream %s with go2rtc", db_streams[i].name);
-            all_success = false;
-            failed++;
+        // Skip main stream API sync when override is set (defined in go2rtc.yaml),
+        // but still fall through to sub-stream registration below.
+        if (db_streams[i].go2rtc_source_override[0] != '\0') {
+            log_debug("Skipping main stream API sync for %s (has go2rtc source override)", db_streams[i].name);
+            skipped++;
+        } else if (go2rtc_api_stream_exists(db_streams[i].name)) {
+            log_debug("Stream %s already exists in go2rtc, skipping", db_streams[i].name);
+            skipped++;
         } else {
-            log_info("Successfully synced stream %s to go2rtc", db_streams[i].name);
-            synced++;
+            // Stream needs to be registered
+            log_info("Registering missing stream %s with go2rtc", db_streams[i].name);
+
+            if (!go2rtc_stream_register(db_streams[i].name, db_streams[i].url,
+                                        username, password,
+                                        db_streams[i].backchannel_enabled, db_streams[i].protocol,
+                                        db_streams[i].record_audio)) {
+                log_error("Failed to register stream %s with go2rtc", db_streams[i].name);
+                all_success = false;
+                failed++;
+            } else {
+                log_info("Successfully synced stream %s to go2rtc", db_streams[i].name);
+                synced++;
+            }
+        }
+
+        // Register sub-stream if configured — always via API,
+        // even when main stream uses config override.
+        if (db_streams[i].sub_stream_url[0] != '\0') {
+            char sub_name[MAX_STREAM_NAME + 8];
+            snprintf(sub_name, sizeof(sub_name), "%s_sub", db_streams[i].name);
+            if (!go2rtc_api_stream_exists(sub_name)) {
+                log_info("Registering missing sub-stream %s with go2rtc", sub_name);
+                go2rtc_stream_register(sub_name, db_streams[i].sub_stream_url,
+                                       username, password,
+                                       false, db_streams[i].protocol, false);
+            }
         }
     }
 
@@ -1779,6 +1812,10 @@ bool go2rtc_integration_register_stream(const char *stream_name) {
         return false;
     }
 
+    // Check for go2rtc source override — main stream is defined in go2rtc.yaml
+    // and doesn't need API registration, but sub-stream still needs it.
+    bool skip_main = (config.go2rtc_source_override[0] != '\0');
+
     // Determine username and password
     // Priority: 1) onvif fields, 2) extracted from URL
     char username[64] = {0};
@@ -1818,18 +1855,36 @@ bool go2rtc_integration_register_stream(const char *stream_name) {
         }
     }
 
-    // Register with go2rtc
-    if (go2rtc_stream_register(stream_name, config.url,
-                               username[0] != '\0' ? username : NULL,
-                               password[0] != '\0' ? password : NULL,
-                               config.backchannel_enabled, config.protocol,
-                               config.record_audio)) {
-        log_info("Successfully registered stream %s with go2rtc", stream_name);
-        return true;
+    // Register main stream with go2rtc (skip if override is set — defined in YAML)
+    bool main_ok = true;
+    if (skip_main) {
+        log_info("Stream %s has go2rtc source override, skipping main API registration", stream_name);
+    } else {
+        if (go2rtc_stream_register(stream_name, config.url,
+                                   username[0] != '\0' ? username : NULL,
+                                   password[0] != '\0' ? password : NULL,
+                                   config.backchannel_enabled, config.protocol,
+                                   config.record_audio)) {
+            log_info("Successfully registered stream %s with go2rtc", stream_name);
+        } else {
+            log_warn("Failed to register stream %s with go2rtc", stream_name);
+            main_ok = false;
+        }
     }
 
-    log_warn("Failed to register stream %s with go2rtc", stream_name);
-    return false;
+    // Register sub-stream if configured — always via API,
+    // even when main stream uses config override.
+    if (config.sub_stream_url[0] != '\0') {
+        char sub_name[MAX_STREAM_NAME + 8];
+        snprintf(sub_name, sizeof(sub_name), "%s_sub", stream_name);
+        log_info("Registering sub-stream %s with go2rtc", sub_name);
+        go2rtc_stream_register(sub_name, config.sub_stream_url,
+                               username[0] != '\0' ? username : NULL,
+                               password[0] != '\0' ? password : NULL,
+                               false, config.protocol, false);
+    }
+
+    return main_ok || skip_main;
 }
 
 // ============================================================================

@@ -23,6 +23,25 @@
 #include "core/config.h"
 #include "core/path_utils.h"
 #include "utils/strings.h"
+#include "database/db_core.h"
+#include "database/db_streams.h"
+#include "database/db_system_settings.h"
+
+/**
+ * Escape a string for use inside a YAML double-quoted scalar.
+ * Handles " → \" and \ → \\.  Returns dst.
+ */
+static char *yaml_escape_string(const char *src, char *dst, size_t dst_size) {
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j + 2 < dst_size; i++) {
+        if (src[i] == '"' || src[i] == '\\') {
+            dst[j++] = '\\';
+        }
+        dst[j++] = src[i];
+    }
+    dst[j] = '\0';
+    return dst;
+}
 
 
 // Define PATH_MAX if not defined
@@ -697,25 +716,86 @@ bool go2rtc_process_generate_config(const char *config_path, int api_port) {
     fprintf(config_file, "  h264: \"-codec:v libx264 -g:v 30 -preset:v superfast\"\n");
     fprintf(config_file, "  h265: \"-codec:v libx265 -g:v 30 -preset:v superfast\"\n");
 
-    // Streams section (will be populated dynamically)
-    fprintf(config_file, "streams:\n");
-    fprintf(config_file, "  # Streams will be added dynamically\n");
+    // Streams section — write overridden streams directly into config,
+    // other streams will be registered dynamically via the go2rtc API.
+    fprintf(config_file, "\nstreams:\n");
+    {
+        bool has_overridden = false;
+        if (get_db_handle() != NULL) {
+            int ms = g_config.max_streams > 0 ? g_config.max_streams : 32;
+            stream_config_t *streams = calloc(ms, sizeof(stream_config_t));
+            int count = streams ? get_all_stream_configs(streams, ms) : 0;
+
+            for (int i = 0; i < count; i++) {
+                if (!streams[i].enabled) continue;
+                if (streams[i].go2rtc_source_override[0] == '\0') continue;
+
+                has_overridden = true;
+
+                // Escape stream name for YAML double-quoted key safety
+                char escaped_name[MAX_STREAM_NAME * 2];
+                yaml_escape_string(streams[i].name, escaped_name, sizeof(escaped_name));
+
+                const char *override = streams[i].go2rtc_source_override;
+                bool is_single_line = (strchr(override, '\n') == NULL);
+
+                if (is_single_line) {
+                    // Single URL: write as inline YAML scalar
+                    //   "cam": rtsp://camera/stream
+                    fprintf(config_file, "  \"%s\": %s\n", escaped_name, override);
+                } else {
+                    // Multi-line: write as indented block under the key
+                    //   "cam":
+                    //     - rtsp://camera/main
+                    //     - ffmpeg:cam#video=h264
+                    fprintf(config_file, "  \"%s\":\n", escaped_name);
+                    const char *p = override;
+                    while (*p) {
+                        const char *eol = strchr(p, '\n');
+                        if (eol) {
+                            fprintf(config_file, "    %.*s\n", (int)(eol - p), p);
+                            p = eol + 1;
+                        } else {
+                            fprintf(config_file, "    %s\n", p);
+                            break;
+                        }
+                    }
+                }
+            }
+            free(streams);
+        }
+        if (!has_overridden) {
+            fprintf(config_file, "  # Streams will be added dynamically via API\n");
+        }
+    }
+
+    // Global go2rtc config override from system settings
+    {
+        char global_override[4096] = {0};
+        if (get_db_handle() != NULL
+            && db_get_system_setting("go2rtc_config_override", global_override, sizeof(global_override)) == 0
+            && global_override[0] != '\0') {
+            fprintf(config_file, "\n# User config override\n");
+            fprintf(config_file, "%s\n", global_override);
+        }
+    }
 
     fclose(config_file);
     log_info("Generated go2rtc configuration file: %s", config_path);
 
-    // Print the content of the config file for debugging
+    // Print the content of the config file at DEBUG level to avoid
+    // leaking credentials from overrides into production logs.
     FILE *read_file = fopen(config_path, "r");
     if (read_file) {
         char line[256];
-        log_info("Contents of go2rtc config file:");
+        log_debug("Contents of go2rtc config file:");
         while (fgets(line, sizeof(line), read_file)) {
             // Remove newline character
             size_t len = strlen(line);
             if (len > 0 && line[len-1] == '\n') {
                 line[len-1] = '\0';
             }
-            log_info("  %s", line);
+            log_debug("  %s", line);
         }
         fclose(read_file);
     }

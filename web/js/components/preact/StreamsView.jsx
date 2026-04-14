@@ -140,7 +140,8 @@ export function StreamsView() {
     zones: false,
     motion: false,
     ptz: false,
-    advanced: false
+    advanced: false,
+    go2rtcOverride: false
   });
 
   const toggleSection = (section) => {
@@ -277,7 +278,9 @@ export function StreamsView() {
     tags: '',
     // Cross-stream motion trigger: name of another stream whose ONVIF motion
     // events trigger recording on this stream (e.g., PTZ slaved to fixed wide lens)
-    motionTriggerSource: ''
+    motionTriggerSource: '',
+    go2rtcSourceOverride: '',
+    subStreamUrl: ''
   });
   const [isEditing, setIsEditing] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
@@ -616,7 +619,11 @@ export function StreamsView() {
       // Tags
       tags: currentStream.tags || '',
       // Cross-stream motion trigger source
-      motion_trigger_source: currentStream.motionTriggerSource || ''
+      motion_trigger_source: currentStream.motionTriggerSource || '',
+      // go2rtc source override
+      go2rtc_source_override: currentStream.go2rtcSourceOverride || '',
+      // Sub-stream URL
+      sub_stream_url: currentStream.subStreamUrl || ''
     };
 
     // When editing, set is_deleted to false to allow undeleting soft-deleted streams
@@ -868,7 +875,9 @@ export function StreamsView() {
         // Tags
         tags: stream.tags || '',
         // Cross-stream motion trigger source
-        motionTriggerSource: stream.motion_trigger_source || ''
+        motionTriggerSource: stream.motion_trigger_source || '',
+        go2rtcSourceOverride: stream.go2rtc_source_override || '',
+        subStreamUrl: stream.sub_stream_url || ''
       });
       setIsEditing(true);
       setModalVisible(true);
@@ -947,7 +956,9 @@ export function StreamsView() {
           : Array(168).fill(true),
         tags: stream.tags || '',
         // Cross-stream motion trigger source
-        motionTriggerSource: stream.motion_trigger_source || ''
+        motionTriggerSource: stream.motion_trigger_source || '',
+        go2rtcSourceOverride: stream.go2rtc_source_override || '',
+        subStreamUrl: stream.sub_stream_url || ''
       });
       setIsEditing(false);
       setIsCloning(true);
