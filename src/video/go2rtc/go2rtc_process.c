@@ -711,6 +711,7 @@ bool go2rtc_process_generate_config(const char *config_path, int api_port) {
     // Logging configuration
     fprintf(config_file, "log:\n");
     fprintf(config_file, "  level: debug\n\n");  // Use debug level for more verbose logging
+    fprintf(config_file, "  output: /var/log/lightnvr/go2rtc.log\n\n");
 
     fprintf(config_file, "ffmpeg:\n");
     fprintf(config_file, "  h264: \"-codec:v libx264 -g:v 30 -preset:v superfast\"\n");

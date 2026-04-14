@@ -83,6 +83,11 @@ static bool g_initialized = false;
 
 // Stuck stream detection: consecutive checks with no byte count increase
 #define STUCK_STREAM_MAX_STALLED_CHECKS 3
+// How long after a connect/reconnect to suppress stuck detection.
+// Must cover the go2rtc replay warmup (2 * pre_buffer_seconds, typically
+// 20-40s) plus at least one full health-check interval as margin.
+// 30 * (3+1) = 120s — safely beyond the ~90s false-positive window.
+#define STUCK_STREAM_WARMUP_SEC  (HEALTH_CHECK_INTERVAL_SEC * (STUCK_STREAM_MAX_STALLED_CHECKS + 1))
 
 // Stuck stream tracking per stream
 typedef struct {
@@ -91,6 +96,7 @@ typedef struct {
     int64_t last_bytes_send;      // Last known bytes sent by preload consumer
     int stalled_checks;           // Consecutive checks with no increase
     time_t last_check_time;       // Time of last check
+    time_t tracking_start_time;   // Wall time when tracker was created or last reset
     bool tracking_active;         // Whether we're actively tracking this stream
 } stuck_stream_tracker_t;
 
@@ -157,6 +163,7 @@ static stuck_stream_tracker_t *get_or_create_stuck_tracker(const char *stream_na
             g_stuck_trackers[i].tracking_active = true;
             g_stuck_trackers[i].last_bytes_recv = -1;  // -1 = not yet initialized
             g_stuck_trackers[i].last_bytes_send = -1;
+            g_stuck_trackers[i].tracking_start_time = time(NULL);
             pthread_mutex_unlock(&g_stuck_tracker_mutex);
             return &g_stuck_trackers[i];
         }
@@ -178,6 +185,7 @@ static void reset_stuck_tracker(const char *stream_name) {
             g_stuck_trackers[i].last_bytes_send = -1;
             g_stuck_trackers[i].stalled_checks = 0;
             g_stuck_trackers[i].last_check_time = 0;
+            g_stuck_trackers[i].tracking_start_time = time(NULL);
             break;
         }
     }
@@ -190,6 +198,29 @@ static void reset_stuck_tracker(const char *stream_name) {
  * Returns true if the stream appears to be stuck (no data flow)
  */
 static bool check_stream_data_flow(const char *stream_name) {
+    // Warmup guard: skip stuck detection for STUCK_STREAM_WARMUP_SEC after
+    // connect or reconnect.  During this window go2rtc is still draining its
+    // replay buffer and byte counters are legitimately stagnant — triggering
+    // a reload here causes the ~80-90s false-positive reconnect cycle.
+    // The tracker's tracking_start_time is renewed by reset_stuck_tracker()
+    // after every successful reload, so this guard also fires correctly after
+    // camera reboots and subsequent reconnects.
+    {
+        stuck_stream_tracker_t *t = get_or_create_stuck_tracker(stream_name);
+        if (t) {
+            pthread_mutex_lock(&g_stuck_tracker_mutex);
+            time_t start = t->tracking_start_time;
+            pthread_mutex_unlock(&g_stuck_tracker_mutex);
+            time_t now_guard = time(NULL);
+            if (now_guard - start < (time_t)STUCK_STREAM_WARMUP_SEC) {
+                log_debug("Stream %s: skipping stuck check (post-connect warmup, %lds remaining)",
+                          stream_name,
+                          (long)(STUCK_STREAM_WARMUP_SEC - (now_guard - start)));
+                return false;
+            }
+        }
+    }
+
     // Fetch stream info from go2rtc API
     CURL *curl = curl_easy_init();
     if (!curl) {
