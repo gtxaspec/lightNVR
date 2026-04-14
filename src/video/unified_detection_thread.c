@@ -104,6 +104,10 @@ static bool run_detection_on_frame(unified_detection_ctx_t *ctx, AVPacket *pkt);
 static int udt_start_recording(unified_detection_ctx_t *ctx);
 static int udt_stop_recording(unified_detection_ctx_t *ctx);
 static int flush_prebuffer_to_recording(unified_detection_ctx_t *ctx);
+// ONVIF async detection thread helpers (defined before start_unified_detection_thread)
+static void *onvif_detection_thread_func(void *arg);
+static int   start_onvif_detection_thread(unified_detection_ctx_t *ctx);
+static void  stop_onvif_detection_thread(unified_detection_ctx_t *ctx);
 /**
  * Determine the actual API URL to use for detection based on the configured
  * model path and global configuration.
@@ -331,6 +335,12 @@ void shutdown_unified_detection_system(void) {
 
             log_info("Cleaning up unified detection context for %s", ctx->stream_name);
 
+            // Stop the ONVIF detection thread before freeing ctx.
+            // Must happen before free() to avoid use-after-free in the thread.
+            if (is_onvif_detection_model(ctx->model_path)) {
+                stop_onvif_detection_thread(ctx);
+            }
+
             // Clean up resources
             if (ctx->packet_buffer) {
                 destroy_packet_buffer(ctx->packet_buffer);
@@ -408,6 +418,168 @@ static int find_empty_slot(void) {
     return -1;
 }
 
+/* =========================================================================
+ * ONVIF async detection thread
+ * =========================================================================
+ *
+ * Runs detect_motion_onvif() in a loop inside its own OS thread so that
+ * the UDT main loop (and therefore av_read_frame()) is never blocked by a
+ * CURL/SOAP round-trip.
+ *
+ * The PullMessages call inside detect_motion_onvif() blocks up to
+ * CURLOPT_TIMEOUT (10 s) / PT5S while waiting for camera events.  That
+ * natural blocking serves as the inter-poll sleep — no extra sleep() is
+ * needed in the happy path.
+ *
+ * On ONVIF error the motion flag is cleared and we back off ~5 s before
+ * retrying; the ONVIF subscription is renewed automatically inside
+ * detect_motion_onvif() itself.
+ *
+ * SOD and API detection paths are completely unaffected by this change.
+ * Only the is_onvif_detection_model() branch in run_detection_on_frame()
+ * has been modified.
+ * ========================================================================= */
+
+/**
+ * Body of the ONVIF detection background thread.
+ */
+static void *onvif_detection_thread_func(void *arg) {
+    unified_detection_ctx_t *ctx = (unified_detection_ctx_t *)arg;
+
+    log_info("[%s] ONVIF detection thread started (url=%s, user=%s)",
+             ctx->stream_name, ctx->onvif_url_cached, ctx->onvif_username_cached);
+
+    while (atomic_load(&ctx->onvif_thread_running)) {
+        detection_result_t result;
+        memset(&result, 0, sizeof(result));
+
+        int ret = detect_motion_onvif(ctx->onvif_url_cached,
+                                      ctx->onvif_username_cached,
+                                      ctx->onvif_password_cached,
+                                      &result,
+                                      ctx->stream_name);
+
+        /* Re-check stop flag — detect_motion_onvif() may have blocked for
+         * up to CURLOPT_TIMEOUT seconds.  Bail before touching shared state
+         * if we have been asked to stop. */
+        if (!atomic_load(&ctx->onvif_thread_running)) break;
+
+        if (ret == 0 && result.count > 0) {
+            atomic_store(&ctx->onvif_motion_detected, 1);
+            atomic_store(&ctx->onvif_motion_timestamp, (long long)time(NULL));
+            log_debug("[%s] ONVIF thread: %d motion event(s) detected",
+                      ctx->stream_name, result.count);
+
+            /* When motion is active, PullMessages returns immediately (the
+             * camera does not hold the connection for PT5S if events are
+             * already queued).  Without a floor here both ONVIF threads
+             * would busy-loop, firing detect_motion_onvif() dozens of times
+             * per second and flooding process_motion_event() / propagation /
+             * DB writes with redundant events (observed: 20+ calls in a
+             * single log-second during a motion burst).
+             *
+             * 2 s is long enough to prevent the storm while still keeping
+             * the atomic flag fresh for the UDT's 10 s detection interval.
+             * Checked in 100 ms slices so stop requests are honoured quickly. */
+            for (int i = 0; i < 20 && atomic_load(&ctx->onvif_thread_running); i++) {
+                av_usleep(100000); /* 20 x 100 ms = 2 s */
+            }
+        } else {
+            /* No events in this window (ret==0, count==0) or an ONVIF error
+             * (ret!=0).
+             *
+             * Sticky-flag hysteresis: do NOT clear onvif_motion_detected
+             * immediately.  Both ONVIF threads share one PullPoint subscription
+             * on this camera.  The event queue alternates between "has events"
+             * and "empty" depending on which thread pulled last, so a single
+             * "no motion" response does not mean the scene is actually quiet —
+             * the sibling thread may have consumed the motion event a few ms
+             * earlier.  If we cleared the flag instantly we would race with the
+             * UDT's 10 s detection interval and wide (or ptz) would miss the
+             * trigger entirely (observed: 38 s late start).
+             *
+             * Strategy: keep the flag set for at least
+             * ONVIF_MOTION_HOLD_SECS after the last confirmed motion event.
+             * This guarantees the UDT sees flag==1 on its next 10 s tick even
+             * if our very next PullMessages comes back empty.  Only after the
+             * hold window expires do we declare the scene idle. */
+            #define ONVIF_MOTION_HOLD_SECS 15
+            long long last_ts = atomic_load(&ctx->onvif_motion_timestamp);
+            if (last_ts == 0LL ||
+                (long long)time(NULL) - last_ts >= ONVIF_MOTION_HOLD_SECS) {
+                atomic_store(&ctx->onvif_motion_detected, 0);
+            }
+            /* else: hold the flag until the window expires */
+
+            if (ret != 0) {
+                log_warn("[%s] ONVIF thread: detect_motion_onvif error %d – "
+                         "backing off 5 s before retry", ctx->stream_name, ret);
+                /* 50 × 100 ms = 5 s, checking stop flag on each iteration. */
+                for (int i = 0; i < 50 && atomic_load(&ctx->onvif_thread_running); i++) {
+                    av_usleep(100000);
+                }
+            }
+        }
+    }
+
+    log_info("[%s] ONVIF detection thread exiting", ctx->stream_name);
+    return NULL;
+}
+
+/**
+ * Start the ONVIF detection background thread for the given context.
+ * ctx->onvif_url_cached / _username_cached / _password_cached must already
+ * be populated by the caller.
+ *
+ * The thread is created joinable so that unified_detection_thread_func()
+ * can join it on exit and avoid a detached-thread resource leak.
+ *
+ * @return 0 on success, -1 on failure.
+ */
+static int start_onvif_detection_thread(unified_detection_ctx_t *ctx) {
+    atomic_store(&ctx->onvif_thread_running, 1);
+    atomic_store(&ctx->onvif_motion_detected, 0);
+    atomic_store(&ctx->onvif_motion_timestamp, 0LL);
+
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+    int ret = pthread_create(&ctx->onvif_thread, &attr,
+                             onvif_detection_thread_func, ctx);
+    pthread_attr_destroy(&attr);
+
+    if (ret != 0) {
+        log_error("[%s] Failed to create ONVIF detection thread: %s",
+                  ctx->stream_name, strerror(ret));
+        atomic_store(&ctx->onvif_thread_running, 0);
+        return -1;
+    }
+
+    log_info("[%s] ONVIF detection thread created", ctx->stream_name);
+    return 0;
+}
+
+/**
+ * Signal the ONVIF detection thread to stop and join it.
+ * Safe to call when the thread was never started (onvif_thread_running == 0).
+ * Blocks for at most CURLOPT_TIMEOUT + small overhead (≤ ~12 s).
+ */
+static void stop_onvif_detection_thread(unified_detection_ctx_t *ctx) {
+    if (!atomic_load(&ctx->onvif_thread_running)) {
+        return; /* never started or already stopped */
+    }
+
+    log_info("[%s] Requesting ONVIF detection thread to stop…", ctx->stream_name);
+    atomic_store(&ctx->onvif_thread_running, 0);
+
+    /* pthread_join blocks until the current detect_motion_onvif() call
+     * completes (max CURLOPT_TIMEOUT = 10 s + subscription overhead ≈ 12 s).
+     * Acceptable because this path is only reached during UDT teardown. */
+    pthread_join(ctx->onvif_thread, NULL);
+    log_info("[%s] ONVIF detection thread joined", ctx->stream_name);
+}
+
 /**
  * Start unified detection recording for a stream
  */
@@ -480,6 +652,12 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
     ctx->record_audio = config.record_audio;
     ctx->annotation_only = annotation_only;
     atomic_store(&ctx->external_motion_trigger, 0);  // no pending external trigger
+
+    // Replay-detection: will be set properly on first successful connect
+    ctx->stream_connect_time = time(NULL);
+    ctx->first_video_pts = AV_NOPTS_VALUE;
+    ctx->first_video_pts_set = false;
+    ctx->stream_is_live = false;
 
     // Initialize to current time to avoid large elapsed time on first detection check
     atomic_store(&ctx->last_detection_check_time, (long long)time(NULL));
@@ -554,11 +732,42 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
     atomic_store(&ctx->last_packet_time, (int_fast64_t)time(NULL));
     atomic_store(&ctx->consecutive_failures, 0);
 
+    // Initialize ONVIF async detection thread atomics (zero from calloc, but be explicit)
+    atomic_store(&ctx->onvif_thread_running, 0);
+    atomic_store(&ctx->onvif_motion_detected, 0);
+    atomic_store(&ctx->onvif_motion_timestamp, 0LL);
+
+    // For ONVIF model: cache connection parameters and start the background
+    // polling thread BEFORE the UDT starts reading packets.  This ensures a
+    // motion flag is available on the very first detection check.
+    if (is_onvif_detection_model(model_path)) {
+        extract_onvif_base_url(config.url, config.onvif_port,
+                               ctx->onvif_url_cached, sizeof(ctx->onvif_url_cached));
+        safe_strcpy(ctx->onvif_username_cached, config.onvif_username,
+                    sizeof(ctx->onvif_username_cached), 0);
+        safe_strcpy(ctx->onvif_password_cached, config.onvif_password,
+                    sizeof(ctx->onvif_password_cached), 0);
+
+        if (ctx->onvif_url_cached[0] == '\0') {
+            log_error("[%s] Cannot start ONVIF detection thread: "
+                      "could not derive ONVIF URL from stream URL '%s'",
+                      stream_name, config.url);
+            /* Non-fatal: run_detection_on_frame() will see onvif_motion_detected==0
+             * and return false every cycle, which is safe (no spurious recordings). */
+        } else {
+            if (start_onvif_detection_thread(ctx) != 0) {
+                log_error("[%s] ONVIF detection thread could not be started; "
+                          "ONVIF-triggered recording is disabled for this stream",
+                          stream_name);
+            }
+        }
+    }
+
     // Store context in slot
     ctx->slot_idx = slot;
     detection_contexts[slot] = ctx;
 
-    // Create thread (detached)
+    // Create UDT thread (detached)
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
@@ -1033,6 +1242,11 @@ static void *unified_detection_thread_func(void *arg) {
                     ctx->reconnect_attempt = 0;
                     reconnect_delay_ms = BASE_RECONNECT_DELAY_MS;
                     atomic_store(&ctx->last_packet_time, (int_fast64_t)time(NULL));
+                    // Reset replay-detection state for the new connection
+                    ctx->stream_connect_time = time(NULL);
+                    ctx->first_video_pts_set = false;
+                    ctx->first_video_pts = AV_NOPTS_VALUE;
+                    ctx->stream_is_live = false;
                 } else {
                     ctx->reconnect_attempt++;
                     atomic_fetch_add(&ctx->consecutive_failures, 1);
@@ -1150,6 +1364,14 @@ static void *unified_detection_thread_func(void *arg) {
         udt_stop_recording(ctx);
     }
 
+    // Stop the ONVIF detection thread before freeing ctx.
+    // Must happen before disconnect_from_stream() and before any free(),
+    // because the ONVIF thread still holds a pointer to ctx.
+    // pthread_join blocks for at most CURLOPT_TIMEOUT + subscription overhead (≤ ~12 s).
+    if (is_onvif_detection_model(ctx->model_path)) {
+        stop_onvif_detection_thread(ctx);
+    }
+
     // Disconnect from stream to free FFmpeg decoder_ctx and input_ctx
     // This handles the case where the thread exits the loop while still connected
     // (e.g., during shutdown while in BUFFERING/RECORDING state)
@@ -1207,12 +1429,15 @@ static int flush_packet_callback(const AVPacket *packet, void *user_data) {
 
     unified_detection_ctx_t *ctx = flush_ctx->ctx;
 
-    // Skip until we find a keyframe (ensures valid MP4 start)
+    // Skip until we find a VIDEO keyframe (ensures valid MP4 start).
+    // Audio packets carry AV_PKT_FLAG_KEY on every frame; using them as the
+    // keyframe anchor would prevent the MP4 writer from ever initialising.
     if (!flush_ctx->found_keyframe) {
-        if (packet->flags & AV_PKT_FLAG_KEY) {
+        if ((packet->flags & AV_PKT_FLAG_KEY) &&
+            packet->stream_index == flush_ctx->ctx->video_stream_idx) {
             flush_ctx->found_keyframe = true;
         } else {
-            return 0;  // Skip non-keyframe packets before first keyframe
+            return 0;  // Skip until first video keyframe
         }
     }
 
@@ -1314,7 +1539,68 @@ stats_done:
 
     // Always add packets to circular buffer (for pre-detection content)
     // The buffer automatically evicts old packets when full
-    packet_buffer_add_packet(ctx->packet_buffer, pkt, now);
+    //
+    // go2rtc replay guard: go2rtc replays its ring buffer in real-time when a
+    // consumer connects.  During replay the PTS lags behind wall clock by the
+    // ring-buffer duration.  We skip buffering until the stream is live so the
+    // pre-buffer contains only recent (useful) packets.
+    // The lag is derived from video packets only; audio packets follow the same
+    // gate so the buffer never fills with orphaned audio during replay.
+    //
+    // Additionally, we only start buffering on a keyframe — so the pre-buffer
+    // always begins with a valid GOP start and flush_packet_callback will find
+    // a keyframe to initialise the MP4 writer.
+    bool should_buffer = false;
+    if (is_video && ctx->input_ctx && ctx->video_stream_idx >= 0) {
+        if (!ctx->first_video_pts_set) {
+            // First video packet — record PTS reference, still assume replay
+            ctx->first_video_pts = pkt->pts;
+            ctx->first_video_pts_set = true;
+        } else {
+            // Determine replay lag.
+            // If PTS is valid use PTS-vs-wallclock for accuracy.
+            // If PTS is AV_NOPTS_VALUE (common with some go2rtc outputs)
+            // fall back to pure wall-clock: treat the stream as still
+            // replaying until 2*pre_buffer_seconds have elapsed since connect.
+            double wall_elapsed = difftime(now, ctx->stream_connect_time);
+            double replay_lag;
+
+            if (pkt->pts != AV_NOPTS_VALUE && ctx->first_video_pts != AV_NOPTS_VALUE) {
+                AVRational tb = ctx->input_ctx->streams[ctx->video_stream_idx]->time_base;
+                double pts_elapsed = (double)(pkt->pts - ctx->first_video_pts) * av_q2d(tb);
+                replay_lag = wall_elapsed - pts_elapsed;
+            } else {
+                // No PTS available — conservative wall-clock warmup
+                double warmup = (double)(ctx->pre_buffer_seconds * 2);
+                replay_lag = (wall_elapsed < warmup) ? (warmup - wall_elapsed) : 0.0;
+            }
+
+            if (replay_lag <= (double)ctx->pre_buffer_seconds) {
+                if (!ctx->stream_is_live) {
+                    if (is_keyframe) {
+                        // First live keyframe — flush stale data and start buffering
+                        packet_buffer_clear(ctx->packet_buffer);
+                        ctx->stream_is_live = true;
+                        should_buffer = true;
+                        log_info("[%s] go2rtc replay ended, pre-buffer active (lag=%.1fs)",
+                                 ctx->stream_name, replay_lag);
+                    }
+                    // else: waiting for first live keyframe — skip
+                } else {
+                    should_buffer = true;
+                }
+            } else {
+                log_debug("[%s] go2rtc replay in progress (lag=%.1fs), skipping pre-buffer",
+                          ctx->stream_name, replay_lag);
+            }
+        }
+    } else if (!is_video && ctx->first_video_pts_set) {
+        // Non-video (audio): buffer only once video has gone live
+        should_buffer = true;
+    }
+
+    if (should_buffer)
+        packet_buffer_add_packet(ctx->packet_buffer, pkt, now);
 
     // If recording, write packet to MP4
     if (current_state == UDT_STATE_RECORDING || current_state == UDT_STATE_POST_BUFFER) {
@@ -2004,49 +2290,37 @@ static bool run_detection_on_frame(unified_detection_ctx_t *ctx, AVPacket *pkt) 
         return mot_triggered;
     }
 
-    // ONVIF event-based detection — no frame decoding needed
+    // ONVIF event-based detection — non-blocking atomic flag read
+    // -----------------------------------------------------------------------
+    // detect_motion_onvif() is NOT called here anymore.  A dedicated
+    // background thread (started alongside the UDT, see
+    // start_onvif_detection_thread) polls the camera continuously and writes
+    // its result into ctx->onvif_motion_detected.
+    //
+    // This keeps process_packet() / av_read_frame() completely unblocked:
+    //   • No CURL/SOAP round-trip in the UDT main loop.
+    //   • No PTS gaps in the MP4 caused by ONVIF blocking.
+    //   • No write i/o timeout on the go2rtc consumer connection.
+    //
+    // The ONVIF thread manages the flag value:
+    //   1 while the camera reports motion events; 0 when idle or on error.
+    // We read without clearing — the thread updates the flag each poll cycle.
+    //
+    // SOD and API detection paths are fully unaffected by this change.
+    // -----------------------------------------------------------------------
     if (is_onvif_detection_model(ctx->model_path)) {
-        // Fetch the stream config to obtain the camera URL and ONVIF credentials
-        stream_config_t onvif_cfg;
-        memset(&onvif_cfg, 0, sizeof(onvif_cfg));
-        if (get_stream_config_by_name(ctx->stream_name, &onvif_cfg) != 0) {
-            log_warn("[%s] ONVIF detection: failed to look up stream config", ctx->stream_name);
-            return false;
-        }
+        bool onvif_triggered = (atomic_load(&ctx->onvif_motion_detected) != 0);
 
-        // Derive http://host[:port] from the stream's RTSP/ONVIF URL
-        char onvif_url[MAX_PATH_LENGTH];
-        extract_onvif_base_url(onvif_cfg.url, onvif_cfg.onvif_port, onvif_url, sizeof(onvif_url));
-
-        if (onvif_url[0] == '\0') {
-            log_warn("[%s] ONVIF detection: could not derive ONVIF URL from stream URL: %s",
-                     ctx->stream_name, onvif_cfg.url);
-            return false;
-        }
-
-        log_debug("[%s] ONVIF detection: polling events at %s (user=%s)",
-                  ctx->stream_name, onvif_url, onvif_cfg.onvif_username);
-
-        // detect_motion_onvif already handles DB storage, MQTT publish, and
-        // recording trigger internally — do not duplicate those calls here.
-        int onvif_ret = detect_motion_onvif(onvif_url,
-                                            onvif_cfg.onvif_username,
-                                            onvif_cfg.onvif_password,
-                                            &result,
-                                            ctx->stream_name);
-        if (onvif_ret != 0) {
-            log_warn("[%s] ONVIF detection failed with error %d", ctx->stream_name, onvif_ret);
-            return false;
-        }
-
-        bool onvif_triggered = (result.count > 0);
         if (onvif_triggered) {
             pthread_mutex_lock(&ctx->mutex);
-            ctx->total_detections += result.count;
+            ctx->total_detections++;
             pthread_mutex_unlock(&ctx->mutex);
-            log_info("[%s] ONVIF motion detected (%d event(s))", ctx->stream_name, result.count);
+            log_info("[%s] ONVIF motion detected (async thread, ts=%lld)",
+                     ctx->stream_name,
+                     (long long)atomic_load(&ctx->onvif_motion_timestamp));
         }
         return onvif_triggered;
+
     }
 
     // Embedded model detection - requires frame decoding

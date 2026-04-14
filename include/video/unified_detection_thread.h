@@ -110,6 +110,34 @@ typedef struct {
     // Detections are stored in the database and linked to the continuous recording
     bool annotation_only;
 
+    // -------------------------------------------------------------------------
+    // ONVIF async detection thread
+    // -------------------------------------------------------------------------
+    // When model_path == "onvif" a dedicated background thread calls
+    // detect_motion_onvif() in a loop so that the UDT main loop (and therefore
+    // av_read_frame()) is never blocked by a CURL/SOAP round-trip.
+    //
+    // Lifecycle:
+    //   • Created by start_unified_detection_thread() alongside the UDT.
+    //   • Joined inside unified_detection_thread_func() before ctx is freed.
+    //   • shutdown_unified_detection_system() joins it during forced shutdown.
+    //
+    // Thread-safety:
+    //   • onvif_thread_running  – writer: UDT teardown; reader: ONVIF thread.
+    //   • onvif_motion_detected – writer: ONVIF thread; reader: UDT main loop.
+    //   • onvif_motion_timestamp– same as above.
+    //   All three use atomic operations only; no mutex required.
+    pthread_t    onvif_thread;           // handle (valid only when thread was started)
+    atomic_int   onvif_thread_running;   // 1 = running, 0 = stop requested
+    atomic_int   onvif_motion_detected;  // 1 = motion active, 0 = idle
+    atomic_llong onvif_motion_timestamp; // epoch-seconds of last detected motion
+
+    // ONVIF connection parameters cached at thread-start time so that the
+    // polling thread never needs to call get_stream_config_by_name().
+    char onvif_url_cached[MAX_PATH_LENGTH]; // http://host[:port]
+    char onvif_username_cached[64];
+    char onvif_password_cached[64];
+
     // FFmpeg contexts (managed exclusively by the unified detection thread).
     // Concurrency / lifetime:
     // - These pointers and stream indices are created, updated, and freed only
@@ -137,6 +165,20 @@ typedef struct {
     atomic_bool fps_is_provisional;           // true when stored FPS is a fallback guess
     atomic_int fps_measurement_frame_count;   // video frames counted during measurement window
     atomic_llong fps_measurement_start_ns;    // start of measurement window, in nanoseconds since an epoch
+
+    // go2rtc replay detection: when the UDT connects, go2rtc replays its ring
+    // buffer in real-time before switching to live packets.  We track the wall
+    // clock time of the successful connect and the PTS of the very first video
+    // packet.  For every subsequent packet we compute:
+    //   pts_elapsed  = (pts - first_video_pts) * timebase   [stream time passed]
+    //   wall_elapsed = now - stream_connect_time             [real time passed]
+    //   replay_lag   = wall_elapsed - pts_elapsed            [how far behind live]
+    // While replay_lag > pre_buffer_seconds the stream is still replaying old
+    // data and packets must NOT enter the pre-buffer.
+    time_t stream_connect_time;   // wall time of last successful connect
+    int64_t first_video_pts;      // PTS of first video packet after connect
+    bool first_video_pts_set;     // whether first_video_pts has been recorded
+    bool stream_is_live;          // true once replay_lag <= pre_buffer_seconds
 
     // Thread safety
     pthread_mutex_t mutex;
