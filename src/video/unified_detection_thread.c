@@ -446,8 +446,10 @@ static int find_empty_slot(void) {
 static void *onvif_detection_thread_func(void *arg) {
     unified_detection_ctx_t *ctx = (unified_detection_ctx_t *)arg;
 
-    log_info("[%s] ONVIF detection thread started (url=%s, user=%s)",
-             ctx->stream_name, ctx->onvif_url_cached, ctx->onvif_username_cached);
+    log_info("[%s] ONVIF detection thread started (url=%s)",
+             ctx->stream_name, ctx->onvif_url_cached);
+    log_debug("[%s] ONVIF detection thread credentials: user=%s",
+              ctx->stream_name, ctx->onvif_username_cached);
 
     while (atomic_load(&ctx->onvif_thread_running)) {
         detection_result_t result;
