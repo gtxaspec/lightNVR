@@ -451,8 +451,8 @@ static void *onvif_detection_thread_func(void *arg) {
 
     log_info("[%s] ONVIF detection thread started (url=%s)",
              ctx->stream_name, ctx->onvif_url_cached);
-    log_debug("[%s] ONVIF detection thread credentials: user=%s",
-              ctx->stream_name, ctx->onvif_username_cached);
+    log_debug("[%s] ONVIF detection thread auth=%s",
+              ctx->stream_name, (ctx->onvif_username_cached[0] != '\0') ? "enabled" : "disabled");
 
     while (atomic_load(&ctx->onvif_thread_running)) {
         detection_result_t result;
