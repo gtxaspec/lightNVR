@@ -788,6 +788,10 @@ int start_unified_detection_thread(const char *stream_name, const char *model_pa
     if (result != 0) {
         log_error("Failed to create unified detection thread for %s: %s",
                   stream_name, strerror(result));
+        /* Stop the ONVIF background thread before freeing ctx to avoid
+         * use-after-free: the thread was started above but the UDT that
+         * would normally join it never ran. */
+        stop_onvif_detection_thread(ctx);
         destroy_packet_buffer(ctx->packet_buffer);
         pthread_mutex_destroy(&ctx->mutex);
         free(ctx);
