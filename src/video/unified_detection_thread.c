@@ -1612,8 +1612,12 @@ stats_done:
                     should_buffer = true;
                 }
             } else {
-                log_debug("[%s] go2rtc replay in progress (lag=%.1fs), skipping pre-buffer",
-                          ctx->stream_name, replay_lag);
+                /* Rate-limit: only log on keyframes (~every 2 s) to avoid
+                 * flooding the log at full frame-rate during replay. */
+                if (is_keyframe) {
+                    log_debug("[%s] go2rtc replay in progress (lag=%.1fs), skipping pre-buffer",
+                              ctx->stream_name, replay_lag);
+                }
             }
         }
     } else if (!is_video && ctx->stream_is_live) {
