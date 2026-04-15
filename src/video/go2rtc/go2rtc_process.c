@@ -708,14 +708,6 @@ bool go2rtc_process_generate_config(const char *config_path, int api_port) {
         fprintf(config_file, "\n");
     }
 
-    // Logging configuration
-    fprintf(config_file, "log:\n");
-    fprintf(config_file, "  level: debug\n");  // Use debug level for more verbose logging
-    // Derive go2rtc log path from the config directory so it is consistent
-    // with the directory used for go2rtc.yaml and the lightnvr log.
-    // g_config_dir is guaranteed non-NULL here (validated in go2rtc_process_init).
-    fprintf(config_file, "  output: %s/go2rtc.log\n\n", g_config_dir);
-
     fprintf(config_file, "ffmpeg:\n");
     fprintf(config_file, "  h264: \"-codec:v libx264 -g:v 30 -preset:v superfast\"\n");
     fprintf(config_file, "  h265: \"-codec:v libx265 -g:v 30 -preset:v superfast\"\n");
