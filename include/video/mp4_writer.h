@@ -63,6 +63,18 @@ struct mp4_writer {
 
     // Shutdown coordination
     int shutdown_component_id; // ID assigned by the shutdown coordinator
+
+    // Pending audio codec parameters set by udt_start_recording() before the first
+    // packet arrives.  mp4_writer_initialize() consumes this to declare the audio
+    // stream BEFORE avformat_write_header() is called — the only legal window for
+    // adding streams to an MP4 container.  The params reflect the actual output
+    // codec: AAC (transcoded from PCM) or the original MP4-compatible codec
+    // (e.g. native AAC, MP3).  NULL after consumption or on error.
+    AVCodecParameters *pending_audio_codecpar;
+    // Time base of the input audio stream, stored alongside pending_audio_codecpar.
+    // Used by mp4_writer_initialize() instead of reconstructing from sample_rate,
+    // which may be 0 for some pass-through codecs.
+    AVRational pending_audio_time_base;
 };
 
 /**

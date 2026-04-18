@@ -1103,10 +1103,62 @@ int mp4_writer_initialize(mp4_writer_t *writer, const AVPacket *pkt, const AVStr
         // Store video stream index
         writer->video_stream_idx = 0;  // First stream is video
 
-        // We don't add an audio stream here - we'll add it when we find an audio stream in the input
-        // This exactly matches rtsp_recorder.c behavior
-        log_info("Video stream initialized for %s. Audio stream will be added when detected.",
-                writer->stream_name ? writer->stream_name : "unknown");
+        // Declare the audio stream NOW, before avformat_write_header().
+        // For MP4 containers all streams must be registered before the header is
+        // written — adding a stream afterwards is illegal and silently produces
+        // video-only files even if the transcoder later initialises successfully.
+        // pending_audio_codecpar is populated by udt_start_recording() via the
+        // stateless transcode_pcm_to_aac(); it is NULL for non-UDT paths (e.g.
+        // record_segment) which handle audio registration themselves.
+        if (writer->has_audio && writer->pending_audio_codecpar) {
+            AVStream *a_stream = avformat_new_stream(writer->output_ctx, NULL);
+            if (a_stream) {
+                int aret = avcodec_parameters_copy(a_stream->codecpar,
+                                                   writer->pending_audio_codecpar);
+                if (aret < 0) {
+                    char errbuf[AV_ERROR_MAX_STRING_SIZE] = {0};
+                    av_strerror(aret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+                    log_error("Failed to copy pending audio codec params for %s: %s",
+                              writer->stream_name ? writer->stream_name : "unknown", errbuf);
+                    // The newly created stream is partially configured — leaving it in
+                    // output_ctx would produce an invalid stream table and cause
+                    // avformat_write_header() to fail with an opaque error.
+                    // Treat this as a hard init failure and clean up entirely.
+                    avcodec_parameters_free(&writer->pending_audio_codecpar);
+                    writer->pending_audio_codecpar = NULL;
+                    avformat_free_context(writer->output_ctx);
+                    writer->output_ctx = NULL;
+                    free(dir_path);
+                    return -1;
+                } else {
+                    a_stream->codecpar->codec_tag = 0;
+                    // Use the stored input time_base directly. Reconstructing from
+                    // sample_rate is unsafe: it can be 0 for some pass-through codecs,
+                    // producing an invalid {1,0} time base. Fall back only when needed.
+                    if (writer->pending_audio_time_base.den > 0) {
+                        a_stream->time_base = writer->pending_audio_time_base;
+                    } else if (writer->pending_audio_codecpar->sample_rate > 0) {
+                        a_stream->time_base = (AVRational){1, writer->pending_audio_codecpar->sample_rate};
+                    } else {
+                        a_stream->time_base = (AVRational){1, 48000}; // safe default
+                    }
+                    writer->audio.stream_idx = a_stream->index;
+                    writer->audio.time_base  = a_stream->time_base;
+                    log_info("Audio stream (AAC) declared at index %d before header write for %s",
+                             writer->audio.stream_idx,
+                             writer->stream_name ? writer->stream_name : "unknown");
+                }
+            } else {
+                log_error("Failed to create audio stream for %s — recording video-only",
+                          writer->stream_name ? writer->stream_name : "unknown");
+                writer->has_audio = 0;
+            }
+            avcodec_parameters_free(&writer->pending_audio_codecpar);
+            writer->pending_audio_codecpar = NULL;
+        } else {
+            log_info("Video stream initialized for %s. No pending audio codec params (non-UDT path or audio disabled).",
+                    writer->stream_name ? writer->stream_name : "unknown");
+        }
     }
     else if (input_stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
         // Check if the audio codec is compatible with MP4 format

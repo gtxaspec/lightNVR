@@ -75,6 +75,8 @@ mp4_writer_t *mp4_writer_create(const char *output_path, const char *stream_name
     writer->waiting_for_keyframe = 0;
     writer->is_rotating = 0;       // Initialize rotation flag
     writer->shutdown_component_id = -1; // Initialize to -1 to indicate not registered
+    writer->pending_audio_codecpar = NULL; // Populated by udt_start_recording(), consumed by mp4_writer_initialize()
+    writer->pending_audio_time_base = (AVRational){0, 1}; // Set alongside pending_audio_codecpar
 
     // Extract output directory from output path
     safe_strcpy(writer->output_dir, output_path, sizeof(writer->output_dir), 0);
@@ -273,6 +275,11 @@ void mp4_writer_close(mp4_writer_t *writer) {
     }
 
     cleanup_audio_transcoder(writer->stream_name);
+
+    if (writer->pending_audio_codecpar) {
+        avcodec_parameters_free(&writer->pending_audio_codecpar);
+        writer->pending_audio_codecpar = NULL;
+    }
 
     free(writer);
 
