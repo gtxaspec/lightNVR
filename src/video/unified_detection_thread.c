@@ -1900,6 +1900,60 @@ static int udt_start_recording(unified_detection_ctx_t *ctx) {
     if (ctx->record_audio && ctx->audio_stream_idx >= 0) {
         mp4_writer_set_audio(ctx->mp4_writer, 1);
         log_info("[%s] Audio recording enabled for detection recording", ctx->stream_name);
+
+        // Eagerly determine the output codec parameters so mp4_writer_initialize()
+        // can declare the audio stream BEFORE avformat_write_header() — the only
+        // legal window for adding streams to an MP4 container.
+        //
+        // The pending params must exactly match what mp4_writer_write_packet() will
+        // later mux:
+        //   * PCM variants  -> transcode to AAC  (mp4_writer_write_packet transcodes)
+        //   * MP4-compatible -> deep-copy as-is  (packets pass through unchanged)
+        //   * anything else -> disable audio     (not supported)
+        AVStream *ain = ctx->input_ctx->streams[ctx->audio_stream_idx];
+        const char *codec_name = "unknown";
+        AVCodecParameters *pending = NULL;
+
+        if (is_pcm_codec(ain->codecpar->codec_id)) {
+            // PCM: probe transcode_pcm_to_aac() for the AAC output parameters.
+            // Stateless call — no global audio_transcoders[] access, does not
+            // interfere with the lazy init_audio_transcoder() during packet processing.
+            if (transcode_pcm_to_aac(ain->codecpar, &ain->time_base,
+                                     ctx->stream_name, &pending) < 0 || !pending) {
+                log_warn("[%s] Failed to prepare AAC codec params — disabling audio for this recording",
+                         ctx->stream_name);
+                mp4_writer_set_audio(ctx->mp4_writer, 0);
+            } else {
+                log_info("[%s] PCM->AAC codec params prepared for MP4 header (eager init)",
+                         ctx->stream_name);
+            }
+        } else if (is_audio_codec_compatible_with_mp4(ain->codecpar->codec_id, &codec_name)) {
+            // Already MP4-compatible (AAC, MP3, AC3, Opus): deep-copy codec params.
+            // Packets will be muxed as-is by mp4_writer_write_packet().
+            pending = avcodec_parameters_alloc();
+            if (!pending || avcodec_parameters_copy(pending, ain->codecpar) < 0) {
+                log_warn("[%s] Failed to copy %s codec params — disabling audio for this recording",
+                         ctx->stream_name, codec_name);
+                if (pending) { avcodec_parameters_free(&pending); pending = NULL; }
+                mp4_writer_set_audio(ctx->mp4_writer, 0);
+            } else {
+                log_info("[%s] %s codec params prepared for MP4 header (eager init)",
+                         ctx->stream_name, codec_name);
+            }
+        } else {
+            // Incompatible and not PCM: cannot mux or transcode.
+            is_audio_codec_compatible_with_mp4(ain->codecpar->codec_id, &codec_name);
+            log_warn("[%s] Audio codec %s is not MP4-compatible and not PCM — disabling audio for this recording",
+                     ctx->stream_name, codec_name);
+            mp4_writer_set_audio(ctx->mp4_writer, 0);
+        }
+
+        if (pending) {
+            ctx->mp4_writer->pending_audio_codecpar = pending;
+            // Store the original input time_base so mp4_writer_initialize() does
+            // not have to reconstruct it from sample_rate (which may be 0).
+            ctx->mp4_writer->pending_audio_time_base = ain->time_base;
+        }
     } else {
         mp4_writer_set_audio(ctx->mp4_writer, 0);
         if (ctx->record_audio && ctx->audio_stream_idx < 0) {
