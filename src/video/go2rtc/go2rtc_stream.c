@@ -150,37 +150,38 @@ bool go2rtc_stream_register(const char *stream_id, const char *stream_url,
     }
 
     // Build fragment parameters for go2rtc
-    // go2rtc uses fragment (#) parameters for stream options like timeout, backchannel, transport
-    char fragment_params[256] = {0};
-    int offset = 0;
+    // go2rtc uses fragment (#) parameters for stream options like timeout, backchannel, transport.
+    // These are RTSP-specific — skip them for non-RTSP schemes (wyze://, onvif://, http://, etc.)
+    // so we don't corrupt the source URL for other go2rtc source modules.
+    bool is_rtsp = (strncmp(modified_url, "rtsp://", 7) == 0 ||
+                    strncmp(modified_url, "rtsps://", 8) == 0);
 
-    // Add transport parameter based on protocol setting
-    // Note: Check if URL already contains #transport= to avoid duplicates
-    // go2rtc uses #transport=tcp or #transport=udp to control RTP transport
-    // Without explicit transport, go2rtc may use UDP for RTP even with TCP RTSP connection
-    if (strstr(modified_url, "#transport=") == NULL) {
-        if (protocol == STREAM_PROTOCOL_UDP) {
-            offset += snprintf(fragment_params + offset, sizeof(fragment_params) - offset, "#transport=udp");
-            log_info("Adding UDP transport parameter for stream");
-        } else {
-            // Default to TCP for more reliable streaming (STREAM_PROTOCOL_TCP)
-            offset += snprintf(fragment_params + offset, sizeof(fragment_params) - offset, "#transport=tcp");
-            log_info("Adding TCP transport parameter for stream");
+    if (is_rtsp) {
+        char fragment_params[256] = {0};
+        int offset = 0;
+
+        if (strstr(modified_url, "#transport=") == NULL) {
+            if (protocol == STREAM_PROTOCOL_UDP) {
+                offset += snprintf(fragment_params + offset, sizeof(fragment_params) - offset, "#transport=udp");
+                log_info("Adding UDP transport parameter for stream");
+            } else {
+                offset += snprintf(fragment_params + offset, sizeof(fragment_params) - offset, "#transport=tcp");
+                log_info("Adding TCP transport parameter for stream");
+            }
         }
+
+        offset += snprintf(fragment_params + offset, sizeof(fragment_params) - offset, "#timeout=30");
+
+        if (backchannel_enabled) {
+            snprintf(fragment_params + offset, sizeof(fragment_params) - offset, "#backchannel=1");
+        }
+
+        char new_url[URL_BUFFER_SIZE];
+        snprintf(new_url, URL_BUFFER_SIZE, "%s%s", modified_url, fragment_params);
+        safe_strcpy(modified_url, new_url, URL_BUFFER_SIZE, 0);
+    } else {
+        log_info("Non-RTSP source URL for stream %s, skipping RTSP fragment parameters", stream_id);
     }
-
-    // Add timeout parameter
-    offset += snprintf(fragment_params + offset, sizeof(fragment_params) - offset, "#timeout=30");
-
-    // Add backchannel parameter if enabled
-    if (backchannel_enabled) {
-        snprintf(fragment_params + offset, sizeof(fragment_params) - offset, "#backchannel=1");
-    }
-
-    // Append fragment parameters to URL
-    char new_url[URL_BUFFER_SIZE];
-    snprintf(new_url, URL_BUFFER_SIZE, "%s%s", modified_url, fragment_params);
-    safe_strcpy(modified_url, new_url, URL_BUFFER_SIZE, 0);
 
     log_info("Prepared go2rtc source URL for stream registration of %s: %s", stream_id, modified_url);
 
